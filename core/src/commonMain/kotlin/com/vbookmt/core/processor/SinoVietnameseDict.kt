@@ -213,6 +213,6 @@ object SinoVietnameseDict {
                 capitalizeNext = true
             }
         }
-        return String(chars)
+        return chars.concatToString()
     }
 }

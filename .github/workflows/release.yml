@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: "temurin"
           java-version: "21"
@@ -73,7 +73,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: "temurin"
           java-version: "21"
@@ -86,11 +86,22 @@ jobs:
       - name: Build Windows Kotlin/Native Binary
         run: |
           gradle :apps:windows:assemble --stacktrace
+          if ($LASTEXITCODE -ne 0) { throw "Gradle build failed with exit code $LASTEXITCODE" }
           
-          mkdir dist\VBookMT-Windows
-          copy apps\windows\build\bin\windows\releaseExecutable\*.exe dist\VBookMT-Windows\ || copy apps\windows\build\bin\windows\debugExecutable\*.exe dist\VBookMT-Windows\
-          copy NOTICE.md dist\VBookMT-Windows\
-          copy README.md dist\VBookMT-Windows\
+          New-Item -ItemType Directory -Force -Path dist\VBookMT-Windows
+          $exeFound = $false
+          if (Test-Path "apps\windows\build\bin\windows\releaseExecutable\*.exe") {
+              Copy-Item "apps\windows\build\bin\windows\releaseExecutable\*.exe" "dist\VBookMT-Windows\"
+              $exeFound = $true
+          } elseif (Test-Path "apps\windows\build\bin\windows\debugExecutable\*.exe") {
+              Copy-Item "apps\windows\build\bin\windows\debugExecutable\*.exe" "dist\VBookMT-Windows\"
+              $exeFound = $true
+          }
+          if (-not $exeFound) {
+              throw "No Windows executable found in apps/windows/build/bin/windows!"
+          }
+          Copy-Item NOTICE.md dist\VBookMT-Windows\
+          Copy-Item README.md dist\VBookMT-Windows\
           
           Compress-Archive -Path dist\VBookMT-Windows\* -DestinationPath dist\VBookMT-Windows.zip
 

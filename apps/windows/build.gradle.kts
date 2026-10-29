@@ -13,7 +13,7 @@ kotlin {
     }
 
     sourceSets {
-        val windowsMain by getting {
+        getByName("windowsMain") {
             dependencies {
                 implementation(project(":core"))
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
