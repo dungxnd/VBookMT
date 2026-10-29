@@ -46,6 +46,7 @@ class TranslationService : Service() {
         const val NOTIFICATION_ID = 8765
         const val PORT = 8765
         const val HOST = "127.0.0.1"
+        const val MAX_INPUT_CHARS = 50_000 // DoS & OOM protection threshold (approx. 25-50 chapters)
 
         const val ACTION_START = "vn.dungxnd.vbookmt.ACTION_START"
         const val ACTION_STOP = "vn.dungxnd.vbookmt.ACTION_STOP"
@@ -98,10 +99,9 @@ class TranslationService : Service() {
                 return START_NOT_STICKY
             }
             else -> {
-                val modelId = intent?.getStringExtra(EXTRA_ACTIVE_MODEL) ?: _activeModel.value
-                _activeModel.value = modelId
-
-                val modelSpec = ModelRegistry.getById(modelId)
+                val rawModelId = intent?.getStringExtra(EXTRA_ACTIVE_MODEL) ?: _activeModel.value
+                val modelSpec = ModelRegistry.getById(rawModelId)
+                _activeModel.value = modelSpec.id // Whitelisted ID to strictly prevent path traversal
                 log("Khởi động Service với model: ${modelSpec.name} (${modelSpec.id})")
                 val notification = buildNotification(
                     "Đang chạy CTranslate2 (${modelSpec.name}) tại cổng $PORT"
@@ -180,7 +180,6 @@ class TranslationService : Service() {
                             try {
                                 val request = call.receive<TranslateRequest>()
                                 _requestCount.value += 1
-                                log("Nhận yêu cầu /translate: ${request.text.length} ký tự (model: ${request.model ?: _activeModel.value})")
 
                                 if (request.text.isBlank()) {
                                     call.respond(
@@ -189,6 +188,22 @@ class TranslationService : Service() {
                                     )
                                     return@post
                                 }
+
+                                // OOM / DoS protection: reject excessive text length
+                                if (request.text.length > MAX_INPUT_CHARS) {
+                                    log("CẢNH BÁO: Văn bản vượt quá giới hạn an toàn (${request.text.length} > $MAX_INPUT_CHARS)")
+                                    call.respond(
+                                        HttpStatusCode.BadRequest,
+                                        TranslateResponse(
+                                            success = false,
+                                            translatedText = "",
+                                            error = "Văn bản quá dài (${request.text.length} ký tự). Giới hạn tối đa là $MAX_INPUT_CHARS ký tự để tránh tràn bộ nhớ."
+                                        )
+                                    )
+                                    return@post
+                                }
+
+                                log("Nhận yêu cầu /translate: ${request.text.length} ký tự (model: ${request.model ?: _activeModel.value})")
 
                                 var finalTranslatedText = ""
                                 val elapsedMs = measureTimeMillis {
@@ -246,16 +261,15 @@ class TranslationService : Service() {
     }
 
     private fun stopServer() {
-        serviceScope.launch {
-            try {
-                serverEngine?.stop(gracePeriodMillis = 200, timeoutMillis = 500)
-                serverEngine = null
-                serverJob?.cancel()
-                serverJob = null
-                Log.i(TAG, "Server stopped gracefully.")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error stopping server: ${e.message}", e)
-            }
+        try {
+            // Stop Ktor CIO server synchronously and close network sockets cleanly
+            serverEngine?.stop(gracePeriodMillis = 100, timeoutMillis = 300)
+            serverEngine = null
+            serverJob?.cancel()
+            serverJob = null
+            log("Máy chủ đã dừng và giải phóng socket an toàn.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping server: ${e.message}", e)
         }
     }
 

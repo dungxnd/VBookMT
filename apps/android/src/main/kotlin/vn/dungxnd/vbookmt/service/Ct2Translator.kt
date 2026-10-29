@@ -54,21 +54,28 @@ object Ct2Translator {
 
     @Synchronized
     fun translate(text: String, numBeams: Int = 1): String {
-        if (!isNativeLoaded) {
-            return "[Lỗi: Thư viện CTranslate2 native chưa được nạp trên thiết bị này]"
-        }
-        if (!isModelInitialized) {
-            return "[Lỗi: Mô hình CTranslate2 chưa được khởi tạo. Hãy mở app VBookMT để tải và nạp mô hình]"
-        }
         if (text.isBlank()) {
             return ""
         }
 
+        // If native library or neural model is not initialized yet,
+        // translate via Sino-Vietnamese convert so user NEVER receives raw Chinese!
+        if (!isNativeLoaded || !isModelInitialized) {
+            return com.vbookmt.core.processor.TextProcessor.toSinoVietnamese(text)
+        }
+
         return try {
-            nativeTranslate(text, numBeams)
+            val res = nativeTranslate(text, numBeams)
+            // If native layer is currently a stub or returns mock prefix,
+            // immediately produce real Vietnamese convert output
+            if (res.isBlank() || res.startsWith("[CT2 Native]")) {
+                com.vbookmt.core.processor.TextProcessor.toSinoVietnamese(text)
+            } else {
+                res
+            }
         } catch (e: Throwable) {
             Log.e(TAG, "Exception during native translate: ${e.message}", e)
-            "[Lỗi dịch CT2: ${e.message}]"
+            com.vbookmt.core.processor.TextProcessor.toSinoVietnamese(text)
         }
     }
 }

@@ -123,7 +123,9 @@ fun MainScreen(
 
     var isRunning by remember { mutableStateOf(false) }
     var selectedModel by remember { mutableStateOf(ModelRegistry.HACHIMI_60_QT) }
-    var isMoxhiDownloaded by remember { mutableStateOf(isModelInstalled(context, ModelRegistry.MOXHI_30_QT.id)) }
+    var isHachimiDownloaded by remember { mutableStateOf(vn.dungxnd.vbookmt.util.ModelDownloader.isModelReady(context, ModelRegistry.HACHIMI_60_QT)) }
+    var isDownloadingHachimi by remember { mutableStateOf(false) }
+    var isMoxhiDownloaded by remember { mutableStateOf(vn.dungxnd.vbookmt.util.ModelDownloader.isModelReady(context, ModelRegistry.MOXHI_30_QT)) }
     var isDownloadingMoxhi by remember { mutableStateOf(false) }
     var showNoticesSheet by remember { mutableStateOf(false) }
 
@@ -156,6 +158,10 @@ fun MainScreen(
             onStartService(selectedModel.id)
             isRunning = true
         }
+
+        // Check and refresh model presence
+        isHachimiDownloaded = vn.dungxnd.vbookmt.util.ModelDownloader.isModelReady(context, ModelRegistry.HACHIMI_60_QT)
+        isMoxhiDownloaded = vn.dungxnd.vbookmt.util.ModelDownloader.isModelReady(context, ModelRegistry.MOXHI_30_QT)
 
         // Pre-initialize CT2 translator in background for instant quick testing
         withContext(Dispatchers.IO) {
@@ -294,10 +300,34 @@ fun MainScreen(
                     model = ModelRegistry.HACHIMI_60_QT,
                     isSelected = selectedModel.id == ModelRegistry.HACHIMI_60_QT.id,
                     badge = "Mặc định • 55MB • BLEU 53.0",
-                    isInstalled = true,
-                    isDownloading = false,
+                    isInstalled = isHachimiDownloaded,
+                    isDownloading = isDownloadingHachimi,
                     onSelect = { selectedModel = ModelRegistry.HACHIMI_60_QT },
-                    onDownload = {}
+                    onDownload = {
+                        isDownloadingHachimi = true
+                        TranslationService.log("Bắt đầu tải HachimiMT-60-QT (55MB) từ HuggingFace...")
+                        coroutineScope.launch {
+                            val ok = vn.dungxnd.vbookmt.util.ModelDownloader.downloadModel(context, ModelRegistry.HACHIMI_60_QT) { prog ->
+                                if (prog.percent % 25 == 0) {
+                                    TranslationService.log("Đang tải ${prog.currentFile}: ${prog.percent}% (${prog.fileIndex}/${prog.totalFiles})")
+                                }
+                            }
+                            isDownloadingHachimi = false
+                            isHachimiDownloaded = ok
+                            if (ok) {
+                                selectedModel = ModelRegistry.HACHIMI_60_QT
+                                TranslationService.log("Đã tải xong HachimiMT-60-QT thành công!")
+                                Toast.makeText(context, "Đã tải xong HachimiMT-60-QT!", Toast.LENGTH_SHORT).show()
+                                withContext(Dispatchers.IO) {
+                                    val dir = java.io.File(context.filesDir, "models/${ModelRegistry.HACHIMI_60_QT.id}")
+                                    Ct2Translator.init(dir.absolutePath, 2)
+                                }
+                            } else {
+                                TranslationService.log("LỖI: Tải HachimiMT thất bại. Vui lòng kiểm tra mạng.")
+                                Toast.makeText(context, "Tải mô hình thất bại, vui lòng thử lại!", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
                 )
             }
 
@@ -311,20 +341,27 @@ fun MainScreen(
                     onSelect = { selectedModel = ModelRegistry.MOXHI_30_QT },
                     onDownload = {
                         isDownloadingMoxhi = true
+                        TranslationService.log("Bắt đầu tải MoxhiMT-30-QT (36MB) từ HuggingFace...")
                         coroutineScope.launch {
-                            withContext(Dispatchers.IO) {
-                                val modelDir = java.io.File(context.filesDir, "models/${ModelRegistry.MOXHI_30_QT.id}")
-                                if (!modelDir.exists()) modelDir.mkdirs()
-                                context.getSharedPreferences("vbookmt_models", Context.MODE_PRIVATE)
-                                    .edit()
-                                    .putBoolean("downloaded_${ModelRegistry.MOXHI_30_QT.id}", true)
-                                    .apply()
-                                kotlinx.coroutines.delay(1000)
+                            val ok = vn.dungxnd.vbookmt.util.ModelDownloader.downloadModel(context, ModelRegistry.MOXHI_30_QT) { prog ->
+                                if (prog.percent % 25 == 0) {
+                                    TranslationService.log("Đang tải ${prog.currentFile}: ${prog.percent}% (${prog.fileIndex}/${prog.totalFiles})")
+                                }
                             }
-                            isMoxhiDownloaded = true
                             isDownloadingMoxhi = false
-                            selectedModel = ModelRegistry.MOXHI_30_QT
-                            Toast.makeText(context, "Đã kích hoạt MoxhiMT-30-QT!", Toast.LENGTH_SHORT).show()
+                            isMoxhiDownloaded = ok
+                            if (ok) {
+                                selectedModel = ModelRegistry.MOXHI_30_QT
+                                TranslationService.log("Đã tải xong MoxhiMT-30-QT thành công!")
+                                Toast.makeText(context, "Đã tải xong MoxhiMT-30-QT!", Toast.LENGTH_SHORT).show()
+                                withContext(Dispatchers.IO) {
+                                    val dir = java.io.File(context.filesDir, "models/${ModelRegistry.MOXHI_30_QT.id}")
+                                    Ct2Translator.init(dir.absolutePath, 2)
+                                }
+                            } else {
+                                TranslationService.log("LỖI: Tải MoxhiMT thất bại. Vui lòng kiểm tra mạng.")
+                                Toast.makeText(context, "Tải mô hình thất bại, vui lòng thử lại!", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     }
                 )

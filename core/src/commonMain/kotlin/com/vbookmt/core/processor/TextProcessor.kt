@@ -51,6 +51,16 @@ object TextProcessor {
     }
 
     /**
+     * Converts Chinese text to Sino-Vietnamese / Convert translation.
+     * Guarantees that raw Chinese characters are never returned even when
+     * neural weights are still being downloaded.
+     */
+    fun toSinoVietnamese(text: String): String {
+        val sanitized = sanitize(text)
+        return SinoVietnameseDict.translate(sanitized)
+    }
+
+    /**
      * Chunks a long chapter into safe paragraph blocks (max ~800-1200 characters)
      * to prevent exceeding the MarianMT 512-token position capacity.
      */
