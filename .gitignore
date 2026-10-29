@@ -33,13 +33,17 @@ env/
 dist/
 *.egg-info/
 
-# Model checkpoints & large weights (keep scripts, ignore large weight files)
-models/**/*.onnx
-models/**/*.safetensors
-models/**/*.bin
+# Model checkpoints & weights
+models/
+exported_models/
 *.safetensors
 *.bin
 *.onnx
+*.spm
+
+# Test outputs & temporary benchmark files
+test_input.txt
+output_*.txt
 
 # OS files
 .DS_Store
