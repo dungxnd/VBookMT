@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Generate release notes for VBookMT releases.
+Generate clean release notes for VBookMT releases.
 Extracts the corresponding version section from CHANGELOG.md,
 or falls back to git commits since the last tag.
-Appends the official model notices and author attributions.
 """
 
 import sys
@@ -11,16 +10,6 @@ import os
 import re
 import subprocess
 from pathlib import Path
-
-NOTICES_FOOTER = """
----
-
-### 💖 Ghi nhận Tác quyền & Bản quyền (Notices & Credits)
-* **HachimiMT-60-QT & 40-QT**: Tác giả [ngocdang83](https://huggingface.co/ngocdang83) ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)).
-* **MoxhiMT-30-QT & vp2vi**: Tác giả [DanVP](https://huggingface.co/DanVP) ([CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)).
-* **CTranslate2**: Dự án mã nguồn mở [OpenNMT Team](https://github.com/OpenNMT/CTranslate2) (MIT License).
-* **vBook**: Ứng dụng đọc truyện của tác giả [Darkrai9x](https://github.com/Darkrai9x).
-"""
 
 def get_git_log_notes(tag: str) -> str:
     try:
@@ -70,9 +59,8 @@ def main():
         print(f"[*] Version {tag} not found in CHANGELOG.md, falling back to git log...")
         notes = get_git_log_notes(tag)
 
-    full_release_notes = notes + "\n" + NOTICES_FOOTER
-    out_file.write_text(full_release_notes, encoding="utf-8")
-    print(f"[+] Release notes generated successfully at: {out_file}")
+    out_file.write_text(notes.strip() + "\n", encoding="utf-8")
+    print(f"[+] Clean release notes generated at: {out_file}")
 
 if __name__ == "__main__":
     main()
