@@ -3,19 +3,19 @@ function execute() {
         {
             id: "hachimi-60-qt",
             name: "HachimiMT 60 QT (Mặc định)",
-            description: "Tác giả: ngocdang83 (CC BY 4.0) — Chất lượng dịch cao nhất, chuẩn văn phong truyện convert, giữ ngôi xưng hô ổn định.",
+            description: "Mặc định (ngocdang83) — dịch mượt, chuẩn xưng hô convert.",
             isNetworkRequired: false
         },
         {
             id: "moxhi-30-qt",
             name: "MoxhiMT 30 QT (Tùy chọn tải thêm)",
-            description: "Tác giả: DanVP (CC BY-NC 4.0) — Bản siêu nhẹ 36MB, tốc độ phản hồi cực nhanh, tiết kiệm RAM.",
+            description: "Bản nhẹ 36MB (DanVP) — tốc độ nhanh, ít tốn RAM.",
             isNetworkRequired: false
         },
         {
             id: "hachimi-40-qt",
             name: "HachimiMT 40 QT",
-            description: "Tác giả: ngocdang83 (CC BY 4.0) — Bản 40MB, tối ưu ngắt dòng đoạn văn.",
+            description: "Bản 40MB (ngocdang83) — tối ưu ngắt dòng đoạn văn.",
             isNetworkRequired: false
         }
     ]);

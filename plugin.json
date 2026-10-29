@@ -1,0 +1,19 @@
+{
+  "metadata": {
+    "author": "VBookMT",
+    "description": "Kho tiện ích dịch offline cho vBook"
+  },
+  "data": [
+    {
+      "name": "VBookMT (Offline AI)",
+      "author": "VBookMT",
+      "path": "https://raw.githubusercontent.com/DungxND/VBookMT/main/vbook-extension/plugin.zip",
+      "version": 1,
+      "source": "https://github.com/DungxND/VBookMT",
+      "icon": "https://raw.githubusercontent.com/DungxND/VBookMT/main/vbook-extension/icon.png",
+      "description": "Dịch truyện Trung offline bằng model AI Hachimi & Moxhi, chuẩn xưng hô convert, không cần mạng.",
+      "type": "translate",
+      "locale": "vi_VN"
+    }
+  ]
+}

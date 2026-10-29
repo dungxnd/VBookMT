@@ -1,57 +1,54 @@
-# VBookMT (VBook Offline Neural Machine Translation)
+# VBookMT
 
-Hệ sinh thái dịch thuật offline bằng mô hình AI cục bộ (MarianMT: HachimiMT / MoxhiMT) dành riêng cho ứng dụng **vBook** trên Android và Windows.
+Bộ dịch truyện Trung $\rightarrow$ Việt offline cho ứng dụng **vBook**, sử dụng mô hình MarianMT (HachimiMT, MoxhiMT) chạy cục bộ qua CTranslate2.
 
-## 🌟 Điểm nổi bật
-- **100% Offline**: Không dùng Cloud, mất mạng hoặc tắt WiFi vẫn dịch mượt mà.
-- **Zero Pronoun Flips (Chuẩn Convert)**: Sử dụng các mô hình `HachimiMT-60-QT` / `HachimiMT-40-QT` chuẩn văn phong kiếm hiệp/tiên hiệp (*ta, ngươi, hắn, nàng, tỷ muội*).
-- **Siêu nhẹ & Tiết kiệm pin**: Model nén INT8 chỉ từ 40MB – 55MB. Khi nghỉ ngơi tiêu thụ 0.0% CPU.
-- **Không lo bị sập (Android)**: App Android chạy dưới dạng Foreground Service (có Notification) chống bị hệ điều hành tắt ngầm do tối ưu pin.
-
----
-
-## 🏗 Cấu trúc Monorepo
-
-```text
-VBookMT/
-├── core/                        # Kotlin Multiplatform (KMP) shared logic
-│   ├── src/commonMain/kotlin/   # Protocol, text pre/post-processing, <NL> handlers
-│   └── build.gradle.kts
-│
-├── apps/
-│   ├── android/                 # Android Companion App (Kotlin)
-│   │   ├── src/main/            # Foreground Service + Embedded HTTP Server + ONNX Runtime
-│   │   └── build.gradle.kts
-│   │
-│   └── windows/                 # Windows Native App (Kotlin/Native mingwX64)
-│       ├── src/nativeMain/      # Standalone Native Executable (.exe) + ONNX Runtime C API
-│       └── build.gradle.kts
-│
-├── vbook-extension/             # Extension vBook chuẩn
-│   ├── plugin.json              # Khai báo type: "translate", version, metadata
-│   ├── icon.png                 # Icon extension
-│   └── src/
-│       ├── config.js            # Cài đặt server URL (mặc định: http://127.0.0.1:8765)
-│       ├── language.js          # Khai báo cặp ngôn ngữ (zh -> vi)
-│       ├── model.js             # Danh sách model lựa chọn
-│       └── translate.js         # Gửi text sang local server qua fetch
-│
-└── tools/
-    └── model_converter/         # Bộ công cụ xuất và lượng tử hóa mô hình
-        ├── export_onnx.py       # Xuất Hugging Face MarianMT sang ONNX INT8
-        └── benchmark.py         # Kiểm tra tốc độ và chất lượng dịch
-```
+## ✨ Điểm chính
+- **Dịch offline 100%**: Không tốn API key, không cần mạng internet.
+- **Chuẩn văn phong convert**: Giữ đúng đại từ nhân xưng (*ta, ngươi, hắn, nàng, huynh, đệ*), không bị lẫn ngôi.
+- **Tốc độ nhanh**: Nén INT8 tối ưu (~1,600+ ký tự/giây, tầm 1-2 giây một chương).
+- **Fallback an toàn**: Nếu chưa bật server VBookMT, extension tự động chuyển sang QuickTranslator để việc đọc không bị ngắt quãng.
+- **Chạy nền ổn định**: App Android chạy dạng Foreground Service kèm thông báo, không lo bị hệ điều hành tắt ngầm.
 
 ---
 
-## 🚀 Luồng hoạt động
+## 📦 Cài đặt Extension vào vBook
 
-```
-[vBook Reader (Android / Windows)]
-             │
-             ▼ (fetch qua http://127.0.0.1:8765/translate)
-[VBookMT Companion Server (Android Service / Windows Native .exe)]
-             │
-             ▼ (Nạp model HachimiMT-40-QT / 60-QT qua ONNX Runtime)
-[Kết quả dịch Tiếng Việt chuẩn convert siêu tốc]
-```
+### Cách 1: Thêm link nguồn trong vBook (tiện nhất)
+1. Mở **vBook** $\rightarrow$ **Cài đặt** $\rightarrow$ **Tiện ích mở rộng**.
+2. Nhấn biểu tượng dấu **+** (Thêm nguồn).
+3. Dán URL sau rồi bấm Thêm:
+   ```text
+   https://raw.githubusercontent.com/DungxND/VBookMT/main/plugin.json
+   ```
+4. Chọn cài đặt **VBookMT (Offline AI)**.
+
+### Cách 2: Cài bằng file ZIP
+1. Tải file [`plugin.zip`](https://raw.githubusercontent.com/DungxND/VBookMT/main/vbook-extension/plugin.zip) từ repo hoặc mục [Releases](https://github.com/DungxND/VBookMT/releases).
+2. Vào **vBook** $\rightarrow$ **Tiện ích mở rộng** $\rightarrow$ chọn **Cài đặt từ tệp (ZIP)**.
+
+---
+
+## 🚀 Khởi chạy Server
+
+Extension gửi yêu cầu dịch về máy chủ nội bộ tại `http://127.0.0.1:8765/translate`.
+
+### 📱 Trên Android
+1. Cài file `VBookMT-Android.apk` từ trang Releases.
+2. Mở app **VBookMT**, cấp quyền thông báo.
+3. Model mặc định **HachimiMT-60-QT** đã được cấu hình sẵn (có thể tải thêm **MoxhiMT-30-QT** nếu muốn bản nhẹ).
+4. Bật switch khởi động server, sau đó mở vBook đọc truyện như bình thường.
+
+### 💻 Trên Windows
+1. Tải và giải nén `VBookMT-Windows-x64.zip` từ Releases.
+2. Chạy server:
+   ```powershell
+   ./vbookmt-server.exe --port 8765 --model models/hachimi60_ct2
+   ```
+
+---
+
+## 📜 Ghi nhận tác giả mô hình (Credits)
+
+Mô hình dịch mã nguồn mở được phát triển bởi các tác giả:
+- **HachimiMT-60-QT** & **HachimiMT-40-QT** bởi **[ngocdang83](https://huggingface.co/ngocdang83)** ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)).
+- **MoxhiMT-30-QT** bởi **[DanVP](https://huggingface.co/DanVP)** ([CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)).

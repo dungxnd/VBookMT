@@ -56,6 +56,24 @@ function safeFallbackQt(text, notify) {
     return null;
 }
 
+function readConfigValue(key, defaultVal) {
+    try {
+        if (typeof globalThis !== "undefined" && typeof globalThis[key] !== "undefined" && globalThis[key] !== null && globalThis[key] !== "") {
+            return globalThis[key];
+        }
+        if (typeof this !== "undefined" && typeof this[key] !== "undefined" && this[key] !== null && this[key] !== "") {
+            return this[key];
+        }
+    } catch (e) {}
+    try {
+        if (typeof localConfig !== "undefined" && typeof localConfig.getItem === "function") {
+            var val = localConfig.getItem(key);
+            if (val !== null && val !== undefined && val !== "") return val;
+        }
+    } catch (e) {}
+    return defaultVal;
+}
+
 function execute(text, from, to, source, model, style) {
     text = text || "";
     from = from || "zh";
@@ -69,38 +87,12 @@ function execute(text, from, to, source, model, style) {
     }
 
     // 2. Read configuration
-    var rawServerUrl = "http://127.0.0.1:8765";
-    var fallbackQt = true;
-    var notifyFallback = false;
-    var timeoutMs = 15000;
-    var cleanArtifacts = true;
-
-    try {
-        var cfgUrl = localConfig.getItem("server_url");
-        if (cfgUrl && cfgUrl.trim()) rawServerUrl = cfgUrl;
-
-        var cfgFallback = localConfig.getItem("fallback_qt");
-        if (cfgFallback !== null && cfgFallback !== undefined) {
-            fallbackQt = String(cfgFallback) === "true";
-        }
-
-        var cfgNotify = localConfig.getItem("notify_fallback");
-        if (cfgNotify !== null && cfgNotify !== undefined) {
-            notifyFallback = String(cfgNotify) === "true";
-        }
-
-        var cfgTimeout = parseInt(localConfig.getItem("timeout_seconds"), 10);
-        if (!isNaN(cfgTimeout) && cfgTimeout >= 3 && cfgTimeout <= 120) {
-            timeoutMs = cfgTimeout * 1000;
-        }
-
-        var cfgClean = localConfig.getItem("clean_crawler_artifacts");
-        if (cfgClean !== null && cfgClean !== undefined) {
-            cleanArtifacts = String(cfgClean) === "true";
-        }
-    } catch (e) {
-        // Use defaults if config reading fails
-    }
+    var rawServerUrl = readConfigValue("server_url", "http://127.0.0.1:8765");
+    var fallbackQt = String(readConfigValue("fallback_qt", "true")) === "true";
+    var notifyFallback = String(readConfigValue("notify_fallback", "false")) === "true";
+    var cfgTimeout = parseInt(readConfigValue("timeout_seconds", 15), 10);
+    var timeoutMs = (!isNaN(cfgTimeout) && cfgTimeout >= 3 && cfgTimeout <= 120) ? cfgTimeout * 1000 : 15000;
+    var cleanArtifacts = String(readConfigValue("clean_crawler_artifacts", "true")) === "true";
 
     // 3. Sanitize input text
     var sanitizedText = sanitizeInput(text, cleanArtifacts);
