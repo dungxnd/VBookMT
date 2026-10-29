@@ -39,8 +39,8 @@ jobs:
           distribution: "temurin"
           java-version: "21"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Accept Android SDK Licenses
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -49,11 +49,11 @@ jobs:
 
       - name: Build Android APK
         run: |
-          # Build APK (assembleDebug produces an installable test APK without requiring keystore secrets)
-          gradle :apps:android:assembleDebug --stacktrace
+          # Build optimized release APK (minified, resource-shrunk, signed with debug keystore)
+          gradle :apps:android:assembleRelease --stacktrace
           
           mkdir -p dist
-          cp apps/android/build/outputs/apk/debug/app-debug.apk dist/VBookMT-Android.apk
+          cp apps/android/build/outputs/apk/release/*.apk dist/VBookMT-Android.apk
 
       - name: Upload Android Artifact
         uses: actions/upload-artifact@v4
@@ -85,7 +85,7 @@ jobs:
 
       - name: Build Windows Kotlin/Native Binary
         run: |
-          gradle :apps:windows:windowsExecutable --stacktrace
+          gradle :apps:windows:assemble --stacktrace
           
           mkdir dist\VBookMT-Windows
           copy apps\windows\build\bin\windows\releaseExecutable\*.exe dist\VBookMT-Windows\ || copy apps\windows\build\bin\windows\debugExecutable\*.exe dist\VBookMT-Windows\

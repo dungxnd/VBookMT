@@ -11,7 +11,7 @@
 // static std::unique_ptr<ctranslate2::Translator> g_translator;
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_vbookmt_android_service_Ct2Translator_nativeInit(
+Java_vn_dungxnd_vbookmt_service_Ct2Translator_nativeInit(
     JNIEnv* env,
     jobject /* this */,
     jstring modelDir,
@@ -29,7 +29,7 @@ Java_com_vbookmt_android_service_Ct2Translator_nativeInit(
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_vbookmt_android_service_Ct2Translator_nativeTranslate(
+Java_vn_dungxnd_vbookmt_service_Ct2Translator_nativeTranslate(
     JNIEnv* env,
     jobject /* this */,
     jstring inputText,

@@ -1,4 +1,4 @@
-package com.vbookmt.android.service
+package vn.dungxnd.vbookmt.service
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -11,7 +11,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.vbookmt.android.MainActivity
+import vn.dungxnd.vbookmt.MainActivity
 import com.vbookmt.core.model.ModelRegistry
 import com.vbookmt.core.model.TranslateRequest
 import com.vbookmt.core.model.TranslateResponse
@@ -47,8 +47,8 @@ class TranslationService : Service() {
         const val PORT = 8765
         const val HOST = "127.0.0.1"
 
-        const val ACTION_START = "com.vbookmt.android.ACTION_START"
-        const val ACTION_STOP = "com.vbookmt.android.ACTION_STOP"
+        const val ACTION_START = "vn.dungxnd.vbookmt.ACTION_START"
+        const val ACTION_STOP = "vn.dungxnd.vbookmt.ACTION_STOP"
         const val EXTRA_ACTIVE_MODEL = "EXTRA_ACTIVE_MODEL"
 
         // Reactive state for UI

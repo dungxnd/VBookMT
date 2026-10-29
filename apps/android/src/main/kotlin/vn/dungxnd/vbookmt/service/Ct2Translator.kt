@@ -1,4 +1,4 @@
-package com.vbookmt.android.service
+package vn.dungxnd.vbookmt.service
 
 import android.util.Log
 

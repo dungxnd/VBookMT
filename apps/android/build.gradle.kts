@@ -5,13 +5,13 @@ plugins {
 }
 
 android {
-    namespace = "com.vbookmt.android"
-    compileSdk = 36
+    namespace = "vn.dungxnd.vbookmt"
+    compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.vbookmt.android"
+        applicationId = "vn.dungxnd.vbookmt"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0.0"
 
@@ -38,6 +38,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -51,10 +52,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
-    }
-
-    kotlinOptions {
-        jvmTarget = "21"
     }
 
     buildFeatures {

@@ -1,4 +1,4 @@
-package com.vbookmt.android
+package vn.dungxnd.vbookmt
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -8,8 +8,10 @@ import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
@@ -35,8 +37,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.vbookmt.android.service.Ct2Translator
-import com.vbookmt.android.service.TranslationService
+import vn.dungxnd.vbookmt.service.Ct2Translator
+import vn.dungxnd.vbookmt.service.TranslationService
+import vn.dungxnd.vbookmt.util.BatteryOptimizationHelper
 import com.vbookmt.core.model.ModelRegistry
 import com.vbookmt.core.model.ModelSpec
 import com.vbookmt.core.processor.TextProcessor
@@ -122,6 +125,33 @@ fun MainScreen(
     var isDownloadingMoxhi by remember { mutableStateOf(false) }
     var showNoticesSheet by remember { mutableStateOf(false) }
 
+    // Optimization & Auto-open State
+    var isIgnoringBattery by remember { mutableStateOf(BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)) }
+    var isNotificationGranted by remember { mutableStateOf(BatteryOptimizationHelper.isNotificationPermissionGranted(context)) }
+    var isAutoStartOnOpen by remember { mutableStateOf(BatteryOptimizationHelper.isAutoStartServiceOnOpen(context)) }
+    var showOptimizationDialog by remember { mutableStateOf(false) }
+
+    val notificationLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        isNotificationGranted = isGranted
+    }
+
+    // Check first open or unoptimized state on launch
+    LaunchedEffect(Unit) {
+        val hasPrompted = BatteryOptimizationHelper.hasPrompted(context)
+        val isOptimized = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
+        if (!hasPrompted || !isOptimized) {
+            showOptimizationDialog = true
+        }
+
+        // Auto-open server on app open if user enabled it
+        if (isAutoStartOnOpen && !isRunning) {
+            onStartService(selectedModel.id)
+            isRunning = true
+        }
+    }
+
     // Quick Test State
     var testInput by remember { mutableStateOf("“醒醒，指挥官！快醒醒！”") }
     var testOutput by remember { mutableStateOf("") }
@@ -197,7 +227,32 @@ fun MainScreen(
                 )
             }
 
-            // 2. Model Selection Header
+            // 2. Background & Battery Optimization Card
+            item {
+                BackgroundOptimizationCard(
+                    isIgnoringBattery = isIgnoringBattery,
+                    isAutoStartOnOpen = isAutoStartOnOpen,
+                    isNotificationGranted = isNotificationGranted,
+                    onToggleAutoStart = { enabled ->
+                        isAutoStartOnOpen = enabled
+                        BatteryOptimizationHelper.setAutoStartServiceOnOpen(context, enabled)
+                    },
+                    onRequestIgnoreBattery = {
+                        BatteryOptimizationHelper.requestIgnoreBatteryOptimizations(context)
+                        isIgnoringBattery = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
+                    },
+                    onRequestNotification = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            notificationLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    },
+                    onOpenOemSettings = {
+                        BatteryOptimizationHelper.openAutoStartSettings(context)
+                    }
+                )
+            }
+
+            // 3. Model Selection Header
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -372,6 +427,30 @@ fun MainScreen(
             ) {
                 NoticesSheetContent(onClose = { showNoticesSheet = false })
             }
+        }
+
+        // First Launch / Battery Optimization Setup Dialog
+        if (showOptimizationDialog) {
+            OptimizationSetupDialog(
+                isIgnoringBattery = isIgnoringBattery,
+                isNotificationGranted = isNotificationGranted,
+                onRequestIgnoreBattery = {
+                    BatteryOptimizationHelper.requestIgnoreBatteryOptimizations(context)
+                    isIgnoringBattery = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
+                },
+                onRequestNotification = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        notificationLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                },
+                onOpenOemSettings = {
+                    BatteryOptimizationHelper.openAutoStartSettings(context)
+                },
+                onDismiss = {
+                    BatteryOptimizationHelper.setPrompted(context)
+                    showOptimizationDialog = false
+                }
+            )
         }
     }
 }
@@ -686,4 +765,355 @@ fun NoticeItem(name: String, author: String, license: String, desc: String) {
             Text(text = desc, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp), lineHeight = 15.sp)
         }
     }
+}
+
+// ============================================================================
+// Background & Battery Optimization Card
+// ============================================================================
+@Composable
+fun BackgroundOptimizationCard(
+    isIgnoringBattery: Boolean,
+    isAutoStartOnOpen: Boolean,
+    isNotificationGranted: Boolean,
+    onToggleAutoStart: (Boolean) -> Unit,
+    onRequestIgnoreBattery: () -> Unit,
+    onRequestNotification: () -> Unit,
+    onOpenOemSettings: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.BatteryChargingFull,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "Chạy nền & Tự khởi chạy",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // 1. Battery Optimization Status
+            if (isIgnoringBattery) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF2E7D32).copy(alpha = 0.15f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = Color(0xFF2E7D32),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Đã tắt tối ưu hóa pin (Không giới hạn)",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF2E7D32)
+                        )
+                    }
+                }
+            } else {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onRequestIgnoreBattery() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Chưa tắt tối ưu pin (Hệ thống có thể tắt server)",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        Text(
+                            text = "Tắt ngay",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+
+            // 2. Notification Warning (Android 13+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !isNotificationGranted) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onRequestNotification() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Chưa cấp quyền thông báo Foreground Service",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "Cấp quyền",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+
+            // 3. OEM Specific Auto-Start Settings
+            if (BatteryOptimizationHelper.isOemWithAggressiveKiller()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onOpenOemSettings,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(vertical = 4.dp, horizontal = 12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Settings,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Cài đặt Tự khởi chạy (${BatteryOptimizationHelper.getManufacturerLabel()})",
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 4. Auto-start Server on App Open Switch
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Tự khởi động máy chủ",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "Tự bật server dịch thuật ngay khi mở app",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = isAutoStartOnOpen,
+                    onCheckedChange = onToggleAutoStart
+                )
+            }
+        }
+    }
+}
+
+// ============================================================================
+// First-Open Optimization Setup Dialog
+// ============================================================================
+@Composable
+fun OptimizationSetupDialog(
+    isIgnoringBattery: Boolean,
+    isNotificationGranted: Boolean,
+    onRequestIgnoreBattery: () -> Unit,
+    onRequestNotification: () -> Unit,
+    onOpenOemSettings: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val manufacturer = BatteryOptimizationHelper.getManufacturerLabel()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Outlined.BatteryChargingFull,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(36.dp)
+            )
+        },
+        title = {
+            Text(
+                text = "Thiết lập chạy nền ổn định",
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "Để vBook có thể dịch truyện offline mượt mà mà không bị Android hoặc giao diện hãng ($manufacturer) tắt máy chủ khi đọc, vui lòng thiết lập:",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 18.sp
+                )
+
+                // Step 1: Battery Optimization
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            text = "1. Tắt tối ưu hóa pin",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            text = "Chọn 'Không tối ưu hóa' (Unrestricted) để server luôn sẵn sàng.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        if (isIgnoringBattery) {
+                            Text(
+                                text = "✓ Đã tắt tối ưu hóa pin",
+                                color = Color(0xFF2E7D32),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        } else {
+                            Button(
+                                onClick = onRequestIgnoreBattery,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(vertical = 4.dp)
+                            ) {
+                                Text("Tắt tối ưu hóa pin ngay", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+
+                // Step 2: Notification Permission (Android 13+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = "2. Quyền thông báo",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = "Bắt buộc trên Android 13+ để duy trì Foreground Service.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            if (isNotificationGranted) {
+                                Text(
+                                    text = "✓ Đã cấp quyền thông báo",
+                                    color = Color(0xFF2E7D32),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            } else {
+                                OutlinedButton(
+                                    onClick = onRequestNotification,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentPadding = PaddingValues(vertical = 4.dp)
+                                ) {
+                                    Text("Cho phép thông báo", fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Step 3: OEM Auto-Start Setting
+                if (BatteryOptimizationHelper.isOemWithAggressiveKiller()) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = "3. Tự khởi chạy ($manufacturer)",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = "Bật tự khởi chạy cùng hệ thống để không bị giao diện hãng đóng ứng dụng.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            OutlinedButton(
+                                onClick = onOpenOemSettings,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(vertical = 4.dp)
+                            ) {
+                                Text("Mở cài đặt $manufacturer", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Đã hiểu / Hoàn tất")
+            }
+        }
+    )
 }
