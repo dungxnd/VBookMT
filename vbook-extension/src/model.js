@@ -2,20 +2,20 @@ function execute() {
     return Response.success([
         {
             id: "hachimi-60-qt",
-            name: "HachimiMT 60 QT (Khuyên dùng)",
-            description: "Chất lượng dịch tốt nhất, văn phong convert chuẩn mực, không nhảy ngôi xưng hô",
+            name: "HachimiMT 60 QT (Mặc định)",
+            description: "Tác giả: ngocdang83 (CC BY 4.0) — Chất lượng dịch cao nhất, chuẩn văn phong truyện convert, giữ ngôi xưng hô ổn định.",
+            isNetworkRequired: false
+        },
+        {
+            id: "moxhi-30-qt",
+            name: "MoxhiMT 30 QT (Tùy chọn tải thêm)",
+            description: "Tác giả: DanVP (CC BY-NC 4.0) — Bản siêu nhẹ 36MB, tốc độ phản hồi cực nhanh, tiết kiệm RAM.",
             isNetworkRequired: false
         },
         {
             id: "hachimi-40-qt",
             name: "HachimiMT 40 QT",
-            description: "Siêu nhẹ (40MB), tốc độ cao, giữ nguyên định dạng ngắt dòng đoạn văn",
-            isNetworkRequired: false
-        },
-        {
-            id: "moxhi-30-qt",
-            name: "MoxhiMT 30 QT",
-            description: "Bản siêu gọn (36MB), tốc độ phản hồi cực nhanh",
+            description: "Tác giả: ngocdang83 (CC BY 4.0) — Bản 40MB, tối ưu ngắt dòng đoạn văn.",
             isNetworkRequired: false
         }
     ]);

@@ -1,10 +1,10 @@
 {
   "metadata": {
     "name": "VBookMT (Offline AI)",
-    "author": "VBookMT",
+    "author": "VBookMT (Models: ngocdang83 & DanVP)",
     "version": 1,
     "source": "https://github.com/vbookmt",
-    "description": "Dịch offline bằng mô hình AI MarianMT (HachimiMT / MoxhiMT), 100% không cần mạng, chuẩn xưng hô convert.",
+    "description": "Dịch offline bằng CTranslate2 với mô hình HachimiMT-60-QT (mặc định của ngocdang83) và MoxhiMT-30-QT (tùy chọn của DanVP), 100% không cần mạng, chuẩn xưng hô convert.",
     "locale": "vi",
     "regexp": "",
     "type": "translate",

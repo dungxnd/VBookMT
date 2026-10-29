@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.vbookmt.android.MainActivity
+import com.vbookmt.core.model.ModelRegistry
 import com.vbookmt.core.model.TranslateRequest
 import com.vbookmt.core.model.TranslateResponse
 import com.vbookmt.core.processor.TextProcessor
@@ -20,11 +21,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.serialization.json.Json
+import java.io.File
 
 class TranslationService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var httpServer: LocalServer? = null
+    private var activeModelId: String = ModelRegistry.HACHIMI_60_QT.id
 
     companion object {
         const val CHANNEL_ID = "vbookmt_service_channel"
@@ -32,6 +35,7 @@ class TranslationService : Service() {
         const val PORT = 8765
         const val ACTION_START = "ACTION_START"
         const val ACTION_STOP = "ACTION_STOP"
+        const val EXTRA_ACTIVE_MODEL = "EXTRA_ACTIVE_MODEL"
     }
 
     override fun onCreate() {
@@ -47,7 +51,13 @@ class TranslationService : Service() {
                 return START_NOT_STICKY
             }
             else -> {
-                val notification = buildNotification("Đang chạy máy chủ dịch offline tại cổng $PORT")
+                intent?.getStringExtra(EXTRA_ACTIVE_MODEL)?.let {
+                    activeModelId = it
+                }
+                val modelSpec = ModelRegistry.getById(activeModelId)
+                val notification = buildNotification(
+                    "Đang chạy CTranslate2 (${modelSpec.name}) tại cổng $PORT"
+                )
                 startForeground(NOTIFICATION_ID, notification)
                 startServer()
             }
@@ -58,6 +68,12 @@ class TranslationService : Service() {
     private fun startServer() {
         if (httpServer == null) {
             try {
+                // Initialize CT2 native model
+                val modelDir = File(filesDir, "models/$activeModelId")
+                if (modelDir.exists()) {
+                    Ct2Translator.init(modelDir.absolutePath, threads = 2)
+                }
+
                 httpServer = LocalServer(PORT)
                 httpServer?.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
             } catch (e: Exception) {
@@ -86,7 +102,7 @@ class TranslationService : Service() {
                 "VBookMT Offline Translation Service",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Giữ máy chủ dịch cục bộ hoạt động cho vBook"
+                description = "Giữ máy chủ dịch cục bộ CTranslate2 hoạt động cho vBook"
             }
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
@@ -113,7 +129,7 @@ class TranslationService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("VBookMT Server")
+            .setContentTitle("VBookMT Server (CTranslate2)")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(mainPendingIntent)
@@ -136,14 +152,13 @@ class TranslationService : Service() {
                     // Preprocess source
                     val encoded = TextProcessor.encodeSource(request.text)
 
-                    // Run inference (placeholder for ONNX Runtime session call)
-                    // In real inference: val out = onnxSession.translate(encoded)
-                    // Postprocess target: val finalResult = TextProcessor.decodeTarget(out)
-                    val dummyResult = "[VBookMT Offline]: " + TextProcessor.decodeTarget(encoded)
+                    // Execute translation via native CT2
+                    val translatedRaw = Ct2Translator.translate(encoded, numBeams = 1)
+                    val finalResult = TextProcessor.decodeTarget(translatedRaw)
 
                     val resp = TranslateResponse(
                         success = true,
-                        translatedText = dummyResult,
+                        translatedText = finalResult,
                         elapsedMs = 120
                     )
                     return newFixedLengthResponse(
