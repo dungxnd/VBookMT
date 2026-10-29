@@ -1,0 +1,202 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag version (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+      draft:
+        description: 'Create as Draft Release'
+        type: boolean
+        default: false
+      prerelease:
+        description: 'Mark as Pre-release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  # =========================================================================
+  # 1. Build Android APK
+  # =========================================================================
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Build Android APK
+        run: |
+          # Build APK (assembleDebug produces an installable test APK without requiring keystore secrets)
+          gradle :apps:android:assembleDebug --stacktrace
+          
+          mkdir -p dist
+          cp apps/android/build/outputs/apk/debug/app-debug.apk dist/VBookMT-Android.apk
+
+      - name: Upload Android Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: dist/VBookMT-Android.apk
+          if-no-files-found: error
+
+  # =========================================================================
+  # 2. Build Windows Native EXE (.zip)
+  # =========================================================================
+  build-windows:
+    name: Build Windows Native App
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Build Windows Kotlin/Native Binary
+        run: |
+          gradle :apps:windows:windowsExecutable --stacktrace
+          
+          mkdir dist\VBookMT-Windows
+          copy apps\windows\build\bin\windows\releaseExecutable\*.exe dist\VBookMT-Windows\ || copy apps\windows\build\bin\windows\debugExecutable\*.exe dist\VBookMT-Windows\
+          copy NOTICE.md dist\VBookMT-Windows\
+          copy README.md dist\VBookMT-Windows\
+          
+          Compress-Archive -Path dist\VBookMT-Windows\* -DestinationPath dist\VBookMT-Windows.zip
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: dist/VBookMT-Windows.zip
+          if-no-files-found: error
+
+  # =========================================================================
+  # 3. Package vBook Extension
+  # =========================================================================
+  package-extension:
+    name: Package vBook Extension
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Create Extension Package (.zip)
+        run: |
+          mkdir -p dist
+          python scripts/package_extension.py dist/vbookmt-extension.zip
+
+      - name: Upload Extension Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vbook-extension-zip
+          path: dist/vbookmt-extension.zip
+          if-no-files-found: error
+
+  # =========================================================================
+  # 4. Generate Release Notes & Publish to GitHub Releases
+  # =========================================================================
+  release:
+    name: Publish GitHub Release
+    needs: [build-android, build-windows, package-extension]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for git log extraction
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Determine Version Tag
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag_name }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Generate Release Notes
+        run: |
+          mkdir -p build
+          python scripts/generate_release_notes.py "${{ steps.vars.outputs.tag }}" build/release_notes.md
+          cat build/release_notes.md
+
+      - name: Download Android Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: release-assets
+
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-zip
+          path: release-assets
+
+      - name: Download Extension Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: vbook-extension-zip
+          path: release-assets
+
+      - name: Rename Release Files with Version Tag
+        run: |
+          TAG="${{ steps.vars.outputs.tag }}"
+          mv release-assets/VBookMT-Android.apk "release-assets/VBookMT-Android-${TAG}.apk"
+          mv release-assets/VBookMT-Windows.zip "release-assets/VBookMT-Windows-${TAG}.zip"
+          mv release-assets/vbookmt-extension.zip "release-assets/vbookmt-extension-${TAG}.zip"
+          ls -lh release-assets
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: "VBookMT Release ${{ steps.vars.outputs.tag }}"
+          body_path: build/release_notes.md
+          draft: ${{ github.event.inputs.draft || false }}
+          prerelease: ${{ github.event.inputs.prerelease || false }}
+          files: |
+            release-assets/VBookMT-Android-${{ steps.vars.outputs.tag }}.apk
+            release-assets/VBookMT-Windows-${{ steps.vars.outputs.tag }}.zip
+            release-assets/vbookmt-extension-${{ steps.vars.outputs.tag }}.zip
