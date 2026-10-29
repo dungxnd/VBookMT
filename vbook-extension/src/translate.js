@@ -1,3 +1,61 @@
+/**
+ * VBookMT Translation Script
+ *
+ * Calls local CTranslate2 engine (http://127.0.0.1:8765) with:
+ * - Robust input sanitization (zero-width characters & crawler comment artifacts).
+ * - Automatic retry on transient socket timeout.
+ * - Granular error classification (Connection Refused, Timeout, HTTP 5xx, Bad JSON).
+ * - Safe fallback to built-in QuickTranslator (Qt.translate) when server is offline.
+ */
+
+// Regex patterns
+var RE_TRAILING_NUMS = /(\D)\s*\d+$/;
+var RE_ZERO_WIDTH = /[\u200B\u200C\u200D\uFEFF\u00A0]/g;
+
+function sanitizeInput(text, cleanArtifacts) {
+    if (!text) return "";
+    var clean = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    clean = clean.replace(RE_ZERO_WIDTH, "");
+
+    if (cleanArtifacts) {
+        var lines = clean.split("\n");
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim();
+            if (line) {
+                lines[i] = line.replace(RE_TRAILING_NUMS, "$1");
+            }
+        }
+        clean = lines.join("\n");
+    }
+    return clean;
+}
+
+function normalizeServerUrl(rawUrl) {
+    var url = (rawUrl || "http://127.0.0.1:8765").trim();
+    if (!url.match(/^https?:\/\//i)) {
+        url = "http://" + url;
+    }
+    return url.replace(/\/+$/, "");
+}
+
+function safeFallbackQt(text, notify) {
+    if (typeof Qt !== "undefined" && typeof Qt.translate === "function") {
+        try {
+            var qtRes = Qt.translate(text, "vp");
+            if (qtRes && qtRes.translateText) {
+                var output = qtRes.translateText;
+                if (notify) {
+                    output = "[QT Fallback - VBookMT Server chưa bật]\n\n" + output;
+                }
+                return output;
+            }
+        } catch (e) {
+            // QT error ignored to report main server failure
+        }
+    }
+    return null;
+}
+
 function execute(text, from, to, source, model, style) {
     text = text || "";
     from = from || "zh";
@@ -5,71 +63,140 @@ function execute(text, from, to, source, model, style) {
     model = model || "hachimi-60-qt";
     style = style || "qt";
 
+    // 1. Basic validation
     if (!text.trim()) {
         return Response.success("");
     }
 
-    var serverUrl = "http://127.0.0.1:8765";
+    // 2. Read configuration
+    var rawServerUrl = "http://127.0.0.1:8765";
     var fallbackQt = true;
+    var notifyFallback = false;
+    var timeoutMs = 15000;
+    var cleanArtifacts = true;
 
     try {
         var cfgUrl = localConfig.getItem("server_url");
-        if (cfgUrl && cfgUrl.trim()) {
-            serverUrl = cfgUrl.trim().replace(/\/+$/, "");
-        }
+        if (cfgUrl && cfgUrl.trim()) rawServerUrl = cfgUrl;
+
         var cfgFallback = localConfig.getItem("fallback_qt");
         if (cfgFallback !== null && cfgFallback !== undefined) {
             fallbackQt = String(cfgFallback) === "true";
         }
+
+        var cfgNotify = localConfig.getItem("notify_fallback");
+        if (cfgNotify !== null && cfgNotify !== undefined) {
+            notifyFallback = String(cfgNotify) === "true";
+        }
+
+        var cfgTimeout = parseInt(localConfig.getItem("timeout_seconds"), 10);
+        if (!isNaN(cfgTimeout) && cfgTimeout >= 3 && cfgTimeout <= 120) {
+            timeoutMs = cfgTimeout * 1000;
+        }
+
+        var cfgClean = localConfig.getItem("clean_crawler_artifacts");
+        if (cfgClean !== null && cfgClean !== undefined) {
+            cleanArtifacts = String(cfgClean) === "true";
+        }
     } catch (e) {
-        // Fallback default values
+        // Use defaults if config reading fails
     }
 
-    try {
-        var endpoint = serverUrl + "/translate";
-        var payload = {
-            text: text,
-            from: from,
-            to: to,
-            model: model,
-            style: style
-        };
+    // 3. Sanitize input text
+    var sanitizedText = sanitizeInput(text, cleanArtifacts);
+    var serverUrl = normalizeServerUrl(rawServerUrl);
+    var endpoint = serverUrl + "/translate";
 
-        var response = fetch(endpoint, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(payload),
-            timeout: 15000
-        });
+    var payload = {
+        text: sanitizedText,
+        from: from,
+        to: to,
+        model: model,
+        style: style
+    };
 
-        if (response && response.ok) {
-            var data = response.json();
-            if (data && data.success && data.translatedText) {
-                return Response.success(data.translatedText);
-            } else if (data && data.error) {
-                return Response.error("Lỗi từ server VBookMT: " + data.error);
+    var payloadJson = JSON.stringify(payload);
+    var lastError = "";
+    var maxAttempts = 2; // Initial attempt + 1 retry
+
+    // 4. Network request loop with retry
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            var response = fetch(endpoint, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                },
+                body: payloadJson,
+                timeout: timeoutMs
+            });
+
+            if (!response) {
+                throw new Error("Không nhận được phản hồi từ server (Response is null)");
             }
-        }
-        
-        throw new Error("HTTP " + (response ? response.status : "unknown"));
-    } catch (err) {
-        // Nếu không kết nối được và bật fallback QT, dùng QuickTranslator có sẵn của vBook
-        if (fallbackQt && typeof Qt !== "undefined" && typeof Qt.translate === "function") {
-            try {
-                var qtRes = Qt.translate(text, "vp");
-                if (qtRes && qtRes.translateText) {
-                    return Response.success(qtRes.translateText);
+
+            // Check HTTP status code
+            if (response.ok) {
+                var jsonText = response.text();
+                if (!jsonText || !jsonText.trim()) {
+                    throw new Error("Server trả về nội dung rỗng");
                 }
-            } catch (qtErr) {
-                // Ignore QT error and report server connection error
+
+                var data = null;
+                try {
+                    data = JSON.parse(jsonText);
+                } catch (parseErr) {
+                    throw new Error("Dữ liệu từ server không phải định dạng JSON hợp lệ: " + jsonText.substring(0, 100));
+                }
+
+                if (data && data.success && data.translatedText !== undefined) {
+                    return Response.success(data.translatedText);
+                } else if (data && data.error) {
+                    return Response.error("Lỗi từ server VBookMT: " + data.error);
+                } else {
+                    throw new Error("Cấu trúc phản hồi từ server không đúng quy chuẩn");
+                }
+            } else {
+                var errDetail = "";
+                try {
+                    errDetail = response.text().substring(0, 150);
+                } catch (readErr) {}
+                
+                if (response.status === 404) {
+                    throw new Error("Endpoint không tồn tại (HTTP 404). Kiểm tra lại đường dẫn: " + endpoint);
+                } else if (response.status >= 500) {
+                    throw new Error("Lỗi nội bộ máy chủ (HTTP " + response.status + "): " + errDetail);
+                } else {
+                    throw new Error("Yêu cầu bị từ chối (HTTP " + response.status + "): " + errDetail);
+                }
+            }
+        } catch (netErr) {
+            lastError = netErr ? (netErr.message || String(netErr)) : "Lỗi mạng không xác định";
+            // Sleep briefly before retry
+            if (attempt < maxAttempts) {
+                if (typeof sleep === "function") {
+                    sleep(300);
+                }
             }
         }
-
-        return Response.error(
-            "Không kết nối được server VBookMT (" + serverUrl + "). " +
-            "Vui lòng bật ứng dụng VBookMT trên máy để dịch offline!"
-        );
     }
+
+    // 5. If all attempts failed -> Try Fallback to QuickTranslator
+    if (fallbackQt) {
+        var fallbackResult = safeFallbackQt(sanitizedText, notifyFallback);
+        if (fallbackResult) {
+            return Response.success(fallbackResult);
+        }
+    }
+
+    // 6. Return friendly, actionable error message
+    var userFriendlyMsg = "Không thể kết nối đến máy chủ VBookMT (" + serverUrl + ").\n\n" +
+        "Chi tiết: " + lastError + "\n\n" +
+        "👉 Hướng dẫn khắc phục:\n" +
+        "1. Mở ứng dụng VBookMT trên máy và bấm 'BẬT DỊCH OFFLINE'.\n" +
+        "2. Đảm bảo điện thoại và máy chủ kết nối cùng mạng nếu dùng máy tính khác.\n" +
+        "3. Hoặc bật tùy chọn 'Tự động dùng QuickTranslator' trong cài đặt extension để không bị gián đoạn đọc.";
+
+    return Response.error(userFriendlyMsg);
 }

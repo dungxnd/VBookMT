@@ -79,8 +79,14 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    // Embedded HTTP Server (NanoHTTPD for fast loopback socket)
-    implementation("org.nanohttpd:nanohttpd:2.3.1")
+    // Ktor Server 3.6.0 (High-performance Coroutine Embedded HTTP Server)
+    val ktorVersion = "3.6.0"
+    implementation("io.ktor:ktor-server-core:$ktorVersion")
+    implementation("io.ktor:ktor-server-cio:$ktorVersion")
+    implementation("io.ktor:ktor-server-content-negotiation:$ktorVersion")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:$ktorVersion")
+    implementation("io.ktor:ktor-server-cors:$ktorVersion")
+    implementation("io.ktor:ktor-server-status-pages:$ktorVersion")
 
     // Latest Kotlin Coroutines & Serialization for Kotlin 2.4.x
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
