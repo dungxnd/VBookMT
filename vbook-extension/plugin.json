@@ -1,0 +1,25 @@
+{
+  "metadata": {
+    "name": "VBookMT (Offline AI)",
+    "author": "VBookMT",
+    "version": 1,
+    "source": "https://github.com/vbookmt",
+    "description": "Dịch offline bằng mô hình AI MarianMT (HachimiMT / MoxhiMT), 100% không cần mạng, chuẩn xưng hô convert.",
+    "locale": "vi",
+    "regexp": "",
+    "type": "translate",
+    "nsfw": false,
+    "encrypt": false
+  },
+  "script": {
+    "config": "config.js",
+    "language": "language.js",
+    "model": "model.js",
+    "translate": "translate.js"
+  },
+  "config": {
+    "support_auto_detect": true,
+    "max_line": 250,
+    "max_length": 20000
+  }
+}

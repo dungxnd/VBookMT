@@ -1,0 +1,46 @@
+# Gradle & Build
+.gradle/
+build/
+out/
+bin/
+
+# IDE & Editor
+.idea/
+*.iml
+*.ipr
+*.iws
+local.properties
+.vscode/
+*.swp
+
+# Kotlin / Native & Android
+*.apk
+*.aab
+*.exe
+*.dll
+*.so
+*.dylib
+*.kexe
+*.klib
+
+# Python & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+dist/
+*.egg-info/
+
+# Model checkpoints & large weights (keep scripts, ignore large weight files)
+models/**/*.onnx
+models/**/*.safetensors
+models/**/*.bin
+*.safetensors
+*.bin
+*.onnx
+
+# OS files
+.DS_Store
+Thumbs.db
