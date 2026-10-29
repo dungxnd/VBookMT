@@ -21,8 +21,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -706,6 +708,7 @@ fun NoticesSheetContent(onClose: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(24.dp)
+            .verticalScroll(rememberScrollState())
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -713,7 +716,7 @@ fun NoticesSheetContent(onClose: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Tác quyền & Bản quyền",
+                text = "Tác quyền & Đóng góp",
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp
             )
@@ -725,12 +728,19 @@ fun NoticesSheetContent(onClose: () -> Unit) {
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = "Dự án VBookMT sử dụng và phát triển dựa trên các công trình đóng góp của cộng đồng:",
+            text = "Dự án VBookMT được phát triển bởi dungxnd và tích hợp các công trình xuất sắc từ cộng đồng:",
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Spacer(modifier = Modifier.height(12.dp))
+
+        NoticeItem(
+            name = "VBookMT App & Ecosystem",
+            author = "dungxnd (@dungxnd)",
+            license = "MIT License",
+            desc = "Tác giả kiến trúc & phát triển: Android companion app, Windows native CLI server và extension vBook."
+        )
 
         NoticeItem(
             name = "HachimiMT-60-QT & 40-QT",
@@ -760,7 +770,7 @@ fun NoticesSheetContent(onClose: () -> Unit) {
             desc = "Ứng dụng đọc truyện mã nguồn mở đa nền tảng dành cho cộng đồng người Việt."
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 
