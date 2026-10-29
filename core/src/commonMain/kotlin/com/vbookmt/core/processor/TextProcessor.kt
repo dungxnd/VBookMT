@@ -4,8 +4,8 @@ package com.vbookmt.core.processor
  * Text preprocessing, sanitization, and postprocessing utility for MarianMT (HachimiMT/MoxhiMT).
  */
 object TextProcessor {
-    private const val OPENERS = "“‘«「『【《([{（［｛"
-    private val OPENER_SPACE_REGEX = Regex("([$OPENERS]) (?=[^\\W\\d_])")
+    // Escaped bracket \[ inside character class to prevent PatternSyntaxException across Android/JVM
+    private val OPENER_SPACE_REGEX = Regex("([“‘«「『【《(\\[{（［｛]) (?=[^\\W\\d_])")
     private val NL_MARKER_REGEX = Regex("[^\\S\\n]*<NL>[^\\S\\n]*")
     private val MULTI_NEWLINE_REGEX = Regex("[^\\S\\n]*\\n[^\\S\\n]*")
     private val TRAILING_COMMENT_NUMS = Regex("(\\D)\\s*\\d+$")

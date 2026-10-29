@@ -17,7 +17,13 @@ Java_vn_dungxnd_vbookmt_service_Ct2Translator_nativeInit(
     jstring modelDir,
     jint numThreads
 ) {
+    if (modelDir == nullptr) {
+        return JNI_FALSE;
+    }
     const char* path = env->GetStringUTFChars(modelDir, nullptr);
+    if (path == nullptr) {
+        return JNI_FALSE;
+    }
     LOGI("Initializing CTranslate2 model from: %s with %d threads", path, numThreads);
     
     // In production:
@@ -35,7 +41,13 @@ Java_vn_dungxnd_vbookmt_service_Ct2Translator_nativeTranslate(
     jstring inputText,
     jint numBeams
 ) {
+    if (inputText == nullptr) {
+        return env->NewStringUTF("");
+    }
     const char* src = env->GetStringUTFChars(inputText, nullptr);
+    if (src == nullptr) {
+        return env->NewStringUTF("");
+    }
     LOGI("Translating text (beams=%d)...", numBeams);
 
     // In production:

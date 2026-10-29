@@ -150,6 +150,15 @@ fun MainScreen(
             onStartService(selectedModel.id)
             isRunning = true
         }
+
+        // Pre-initialize CT2 translator in background for instant quick testing
+        withContext(Dispatchers.IO) {
+            if (!Ct2Translator.isReady()) {
+                val modelDir = java.io.File(context.filesDir, "models/${selectedModel.id}")
+                if (!modelDir.exists()) modelDir.mkdirs()
+                Ct2Translator.init(modelDir.absolutePath, threads = 2)
+            }
+        }
     }
 
     // Quick Test State
@@ -361,14 +370,25 @@ fun MainScreen(
                                     isTranslatingTest = true
                                     coroutineScope.launch {
                                         val start = System.currentTimeMillis()
-                                        val out = withContext(Dispatchers.Default) {
-                                            val encoded = TextProcessor.encodeSource(testInput)
-                                            val translated = Ct2Translator.translate(encoded, numBeams = 1)
-                                            TextProcessor.decodeTarget(translated)
+                                        try {
+                                            val out = withContext(Dispatchers.Default) {
+                                                if (!Ct2Translator.isReady()) {
+                                                    val modelDir = java.io.File(context.filesDir, "models/${selectedModel.id}")
+                                                    if (!modelDir.exists()) modelDir.mkdirs()
+                                                    Ct2Translator.init(modelDir.absolutePath, threads = 2)
+                                                }
+                                                val encoded = TextProcessor.encodeSource(testInput)
+                                                val translated = Ct2Translator.translate(encoded, numBeams = 1)
+                                                TextProcessor.decodeTarget(translated)
+                                            }
+                                            testLatencyMs = System.currentTimeMillis() - start
+                                            testOutput = out
+                                        } catch (e: Throwable) {
+                                            testLatencyMs = null
+                                            testOutput = "Lỗi khi dịch: ${e.message ?: e.toString()}"
+                                        } finally {
+                                            isTranslatingTest = false
                                         }
-                                        testLatencyMs = System.currentTimeMillis() - start
-                                        testOutput = out
-                                        isTranslatingTest = false
                                     }
                                 }
                             },
