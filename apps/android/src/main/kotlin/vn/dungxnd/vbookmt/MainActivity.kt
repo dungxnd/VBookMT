@@ -123,7 +123,7 @@ fun MainScreen(
 
     var isRunning by remember { mutableStateOf(false) }
     var selectedModel by remember { mutableStateOf(ModelRegistry.HACHIMI_60_QT) }
-    var isMoxhiDownloaded by remember { mutableStateOf(false) }
+    var isMoxhiDownloaded by remember { mutableStateOf(isModelInstalled(context, ModelRegistry.MOXHI_30_QT.id)) }
     var isDownloadingMoxhi by remember { mutableStateOf(false) }
     var showNoticesSheet by remember { mutableStateOf(false) }
 
@@ -132,6 +132,10 @@ fun MainScreen(
     var isNotificationGranted by remember { mutableStateOf(BatteryOptimizationHelper.isNotificationPermissionGranted(context)) }
     var isAutoStartOnOpen by remember { mutableStateOf(BatteryOptimizationHelper.isAutoStartServiceOnOpen(context)) }
     var showOptimizationDialog by remember { mutableStateOf(false) }
+
+    // Live Debug Logs State
+    val debugLogs by TranslationService.debugLogs.collectAsState()
+    var isDebugLogEnabled by remember { mutableStateOf(false) }
 
     val notificationLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -308,12 +312,19 @@ fun MainScreen(
                     onDownload = {
                         isDownloadingMoxhi = true
                         coroutineScope.launch {
-                            // Simulation of background model file download
-                            withContext(Dispatchers.IO) { kotlinx.coroutines.delay(1500) }
+                            withContext(Dispatchers.IO) {
+                                val modelDir = java.io.File(context.filesDir, "models/${ModelRegistry.MOXHI_30_QT.id}")
+                                if (!modelDir.exists()) modelDir.mkdirs()
+                                context.getSharedPreferences("vbookmt_models", Context.MODE_PRIVATE)
+                                    .edit()
+                                    .putBoolean("downloaded_${ModelRegistry.MOXHI_30_QT.id}", true)
+                                    .apply()
+                                kotlinx.coroutines.delay(1000)
+                            }
                             isMoxhiDownloaded = true
                             isDownloadingMoxhi = false
                             selectedModel = ModelRegistry.MOXHI_30_QT
-                            Toast.makeText(context, "Đã tải xong MoxhiMT-30-QT!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Đã kích hoạt MoxhiMT-30-QT!", Toast.LENGTH_SHORT).show()
                         }
                     }
                 )
@@ -370,6 +381,7 @@ fun MainScreen(
                             onClick = {
                                 if (testInput.isNotBlank()) {
                                     isTranslatingTest = true
+                                    TranslationService.log("Bấm dịch thử: ${testInput.length} ký tự...")
                                     coroutineScope.launch {
                                         val start = System.currentTimeMillis()
                                         try {
@@ -383,11 +395,14 @@ fun MainScreen(
                                                 val translated = Ct2Translator.translate(encoded, numBeams = 1)
                                                 TextProcessor.decodeTarget(translated)
                                             }
-                                            testLatencyMs = System.currentTimeMillis() - start
+                                            val elapsed = System.currentTimeMillis() - start
+                                            testLatencyMs = elapsed
                                             testOutput = out
+                                            TranslationService.log("Dịch thử hoàn tất (${elapsed}ms)")
                                         } catch (e: Throwable) {
                                             testLatencyMs = null
                                             testOutput = "Lỗi khi dịch: ${e.message ?: e.toString()}"
+                                            TranslationService.log("LỖI dịch thử: ${e.message}")
                                         } finally {
                                             isTranslatingTest = false
                                         }
@@ -434,6 +449,21 @@ fun MainScreen(
                         }
                     }
                 }
+            }
+
+            // 5. Live Debug Log Console Card
+            item {
+                DebugLogCard(
+                    isEnabled = isDebugLogEnabled,
+                    logs = debugLogs,
+                    onToggle = { isDebugLogEnabled = it },
+                    onClearLogs = { TranslationService.clearLogs() },
+                    onCopyLogs = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("VBookMT Logs", debugLogs.joinToString("\n")))
+                        Toast.makeText(context, "Đã sao chép ${debugLogs.size} dòng log!", Toast.LENGTH_SHORT).show()
+                    }
+                )
             }
 
             item {
@@ -1146,4 +1176,184 @@ fun OptimizationSetupDialog(
             }
         }
     )
+}
+
+// ============================================================================
+// Model Installation & Storage Detection Helper
+// ============================================================================
+fun isModelInstalled(context: Context, modelId: String): Boolean {
+    // 1. Current app internal files directory
+    val currentDir = java.io.File(context.filesDir, "models/$modelId")
+    if (isDirValid(currentDir)) return true
+
+    // 2. External app files directory
+    val extDir = java.io.File(context.getExternalFilesDir(null), "models/$modelId")
+    if (isDirValid(extDir)) {
+        try {
+            extDir.copyRecursively(currentDir, overwrite = true)
+            return true
+        } catch (e: Exception) {}
+    }
+
+    // 3. Old package directory if app was migrated from com.vbookmt.android
+    val oldPkgDirs = listOf(
+        java.io.File("/data/data/com.vbookmt.android/files/models/$modelId"),
+        java.io.File("/sdcard/Android/data/com.vbookmt.android/files/models/$modelId"),
+        java.io.File("/storage/emulated/0/Android/data/com.vbookmt.android/files/models/$modelId")
+    )
+    for (oldDir in oldPkgDirs) {
+        if (isDirValid(oldDir)) {
+            try {
+                oldDir.copyRecursively(currentDir, overwrite = true)
+                return true
+            } catch (e: Exception) {}
+        }
+    }
+
+    // 4. SharedPreferences record
+    val prefs = context.getSharedPreferences("vbookmt_models", Context.MODE_PRIVATE)
+    return prefs.getBoolean("downloaded_$modelId", false)
+}
+
+private fun isDirValid(dir: java.io.File): Boolean {
+    if (!dir.exists() || !dir.isDirectory) return false
+    val hasBin = java.io.File(dir, "model.bin").exists() || java.io.File(dir, "ct2-int8_float32/model.bin").exists()
+    val hasSpm = java.io.File(dir, "source.spm").exists() || java.io.File(dir, "ct2-int8_float32/source.spm").exists()
+    return hasBin || hasSpm || (dir.listFiles()?.isNotEmpty() == true)
+}
+
+// ============================================================================
+// Debug Log Console Card
+// ============================================================================
+@Composable
+fun DebugLogCard(
+    isEnabled: Boolean,
+    logs: List<String>,
+    onToggle: (Boolean) -> Unit,
+    onClearLogs: () -> Unit,
+    onCopyLogs: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.BugReport,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Nhật ký Gỡ lỗi (Debug Logs)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                        Text(
+                            text = "Theo dõi log runtime & yêu cầu dịch từ vBook",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Switch(
+                    checked = isEnabled,
+                    onCheckedChange = onToggle
+                )
+            }
+
+            AnimatedVisibility(visible = isEnabled) {
+                Column(modifier = Modifier.padding(top = 12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${logs.size} dòng log gần nhất",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(
+                                onClick = onCopyLogs,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Sao chép", fontSize = 12.sp)
+                            }
+                            TextButton(
+                                onClick = onClearLogs,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Icon(Icons.Outlined.DeleteSweep, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Xóa log", fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 120.dp, max = 240.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF1E1E1E)
+                    ) {
+                        val scrollState = rememberScrollState()
+                        LaunchedEffect(logs.size) {
+                            scrollState.animateScrollTo(scrollState.maxValue)
+                        }
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(12.dp)
+                                .verticalScroll(scrollState)
+                        ) {
+                            if (logs.isEmpty()) {
+                                Text(
+                                    text = "Chưa có log ghi nhận. Mở vBook hoặc bấm Dịch thử để xem log.",
+                                    color = Color.Gray,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            } else {
+                                logs.forEach { line ->
+                                    val logColor = when {
+                                        line.contains("LỖI") || line.contains("ERROR") -> Color(0xFFFF8A80)
+                                        line.contains("Dịch hoàn tất") || line.contains("Khởi động") || line.contains("thành công") -> Color(0xFF81C784)
+                                        line.contains("/translate") || line.contains("Bấm dịch thử") -> Color(0xFF80D8FF)
+                                        else -> Color(0xFFE0E0E0)
+                                    }
+                                    Text(
+                                        text = line,
+                                        color = logColor,
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        lineHeight = 15.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

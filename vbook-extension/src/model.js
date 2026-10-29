@@ -11,12 +11,6 @@ function execute() {
             name: "MoxhiMT 30 QT (Tùy chọn tải thêm)",
             description: "Bản nhẹ 36MB (DanVP) — tốc độ nhanh, ít tốn RAM.",
             isNetworkRequired: false
-        },
-        {
-            id: "hachimi-40-qt",
-            name: "HachimiMT 40 QT",
-            description: "Bản 40MB (ngocdang83) — tối ưu ngắt dòng đoạn văn.",
-            isNetworkRequired: false
         }
     ]);
 }

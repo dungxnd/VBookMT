@@ -63,6 +63,23 @@ class TranslationService : Service() {
 
         private val _requestCount = MutableStateFlow(0)
         val requestCount = _requestCount.asStateFlow()
+
+        // Debug log buffer for live in-app inspection
+        private val _debugLogs = MutableStateFlow<List<String>>(
+            listOf("[Init] VBookMT Service logger initialized.")
+        )
+        val debugLogs = _debugLogs.asStateFlow()
+
+        fun log(msg: String) {
+            val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+            val formatted = "[$time] $msg"
+            Log.d(TAG, formatted)
+            _debugLogs.value = (_debugLogs.value + formatted).takeLast(150)
+        }
+
+        fun clearLogs() {
+            _debugLogs.value = listOf("[Init] Nhật ký đã được làm mới.")
+        }
     }
 
     override fun onCreate() {
@@ -73,6 +90,7 @@ class TranslationService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                log("Dừng Translation Service...")
                 stopServer()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -84,6 +102,7 @@ class TranslationService : Service() {
                 _activeModel.value = modelId
 
                 val modelSpec = ModelRegistry.getById(modelId)
+                log("Khởi động Service với model: ${modelSpec.name} (${modelSpec.id})")
                 val notification = buildNotification(
                     "Đang chạy CTranslate2 (${modelSpec.name}) tại cổng $PORT"
                 )
@@ -161,6 +180,7 @@ class TranslationService : Service() {
                             try {
                                 val request = call.receive<TranslateRequest>()
                                 _requestCount.value += 1
+                                log("Nhận yêu cầu /translate: ${request.text.length} ký tự (model: ${request.model ?: _activeModel.value})")
 
                                 if (request.text.isBlank()) {
                                     call.respond(
@@ -177,9 +197,10 @@ class TranslationService : Service() {
 
                                     // 2. Safe chunking for long chapters (> 1000 characters) to prevent MarianMT 512-token overflow
                                     val chunks = TextProcessor.splitIntoParagraphs(sanitized, maxCharsPerChunk = 900)
+                                    log("Chia thành ${chunks.size} đoạn xử lý...")
                                     val translatedChunks = mutableListOf<String>()
 
-                                    for (chunk in chunks) {
+                                    for ((index, chunk) in chunks.withIndex()) {
                                         val encoded = TextProcessor.encodeSource(chunk)
                                         val rawOut = Ct2Translator.translate(encoded, numBeams = 1)
                                         val decoded = TextProcessor.decodeTarget(rawOut)
@@ -189,6 +210,7 @@ class TranslationService : Service() {
                                     finalTranslatedText = translatedChunks.joinToString("\n")
                                 }
                                 _lastLatencyMs.value = elapsedMs
+                                log("Dịch hoàn tất trong ${elapsedMs}ms (${finalTranslatedText.length} ký tự kết quả)")
 
                                 call.respond(
                                     HttpStatusCode.OK,
@@ -199,6 +221,7 @@ class TranslationService : Service() {
                                     )
                                 )
                             } catch (e: Exception) {
+                                log("LỖI /translate: ${e.message}")
                                 Log.e(TAG, "Error handling /translate: ${e.message}", e)
                                 call.respond(
                                     HttpStatusCode.OK, // return OK with error field so client receives structured JSON

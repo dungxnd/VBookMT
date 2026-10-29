@@ -43,18 +43,7 @@ object ModelRegistry {
         description = "Mô hình tải thêm — Bản siêu nhẹ (36MB), tốc độ dịch cực nhanh, tiết kiệm RAM tối đa cho máy cấu hình thấp."
     )
 
-    val HACHIMI_40_QT = ModelSpec(
-        id = "hachimi-40-qt",
-        name = "HachimiMT 40 QT",
-        author = "ngocdang83",
-        license = "CC BY 4.0",
-        repoId = "ngocdang83/HachimiMT-40-QT",
-        sizeMb = 40,
-        isDefault = false,
-        description = "Mô hình tùy chọn — Kiến trúc weight-sharing, hỗ trợ bảo toàn ngắt dòng đoạn văn <NL>."
-    )
-
-    val ALL_MODELS = listOf(HACHIMI_60_QT, MOXHI_30_QT, HACHIMI_40_QT)
+    val ALL_MODELS = listOf(HACHIMI_60_QT, MOXHI_30_QT)
 
     fun getById(id: String): ModelSpec {
         return ALL_MODELS.find { it.id.equals(id, ignoreCase = true) } ?: HACHIMI_60_QT
