@@ -47,6 +47,21 @@ jobs:
         with:
           gradle-version: "9.8.2"
 
+      - name: Cache Android Native Libraries
+        id: cache-native-libs
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/android/src/main/jniLibs
+            apps/android/src/main/cpp/include
+          key: android-native-ct2-v4.5.0-arm64
+
+      - name: Build CTranslate2 & SentencePiece Native Libraries
+        if: steps.cache-native-libs.outputs.cache-hit != 'true'
+        run: |
+          chmod +x scripts/build_android_native.sh
+          ./scripts/build_android_native.sh
+
       - name: Build Android APK
         run: |
           # Build optimized release APK (minified, resource-shrunk, signed with debug keystore)

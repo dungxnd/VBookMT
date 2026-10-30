@@ -13,6 +13,7 @@ data class ModelSpec(
     val isDefault: Boolean = false,
     val description: String,
     val downloadFiles: List<String> = listOf(
+        "ct2-int8_float32/config.json",
         "ct2-int8_float32/model.bin",
         "ct2-int8_float32/shared_vocabulary.json",
         "ct2-int8_float32/source.spm",

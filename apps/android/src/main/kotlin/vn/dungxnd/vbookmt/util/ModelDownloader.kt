@@ -24,6 +24,7 @@ object ModelDownloader {
     )
 
     private val REQUIRED_FILES = listOf(
+        "config.json",
         "model.bin",
         "shared_vocabulary.json",
         "source.spm",
@@ -33,13 +34,17 @@ object ModelDownloader {
     fun isModelReady(context: Context, modelSpec: ModelSpec): Boolean {
         val modelDir = File(context.filesDir, "models/${modelSpec.id}")
         if (!modelDir.exists() || !modelDir.isDirectory) return false
+        val hasConfig = (File(modelDir, "config.json").exists() && File(modelDir, "config.json").length() > 20) ||
+                (File(modelDir, "ct2-int8_float32/config.json").exists() && File(modelDir, "ct2-int8_float32/config.json").length() > 20)
         val hasBin = (File(modelDir, "model.bin").exists() && File(modelDir, "model.bin").length() > 500_000) ||
                 (File(modelDir, "ct2-int8_float32/model.bin").exists() && File(modelDir, "ct2-int8_float32/model.bin").length() > 500_000)
         val hasSrcSpm = (File(modelDir, "source.spm").exists() && File(modelDir, "source.spm").length() > 10_000) ||
                 (File(modelDir, "ct2-int8_float32/source.spm").exists() && File(modelDir, "ct2-int8_float32/source.spm").length() > 10_000)
         val hasTgtSpm = (File(modelDir, "target.spm").exists() && File(modelDir, "target.spm").length() > 10_000) ||
                 (File(modelDir, "ct2-int8_float32/target.spm").exists() && File(modelDir, "ct2-int8_float32/target.spm").length() > 10_000)
-        return hasBin && hasSrcSpm && hasTgtSpm
+        val hasVocab = (File(modelDir, "shared_vocabulary.json").exists() && File(modelDir, "shared_vocabulary.json").length() > 1_000) ||
+                (File(modelDir, "ct2-int8_float32/shared_vocabulary.json").exists() && File(modelDir, "ct2-int8_float32/shared_vocabulary.json").length() > 1_000)
+        return hasConfig && hasBin && hasSrcSpm && hasTgtSpm && hasVocab
     }
 
     suspend fun downloadModel(

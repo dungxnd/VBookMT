@@ -168,7 +168,7 @@ fun MainScreen(
             if (!Ct2Translator.isReady()) {
                 val modelDir = java.io.File(context.filesDir, "models/${selectedModel.id}")
                 if (!modelDir.exists()) modelDir.mkdirs()
-                Ct2Translator.init(modelDir.absolutePath, threads = 2)
+                Ct2Translator.init(modelDir.absolutePath)
             }
         }
     }
@@ -320,7 +320,7 @@ fun MainScreen(
                                 Toast.makeText(context, "Đã tải xong HachimiMT-60-QT!", Toast.LENGTH_SHORT).show()
                                 withContext(Dispatchers.IO) {
                                     val dir = java.io.File(context.filesDir, "models/${ModelRegistry.HACHIMI_60_QT.id}")
-                                    Ct2Translator.init(dir.absolutePath, 2)
+                                    Ct2Translator.init(dir.absolutePath)
                                 }
                             } else {
                                 TranslationService.log("LỖI: Tải HachimiMT thất bại. Vui lòng kiểm tra mạng.")
@@ -356,7 +356,7 @@ fun MainScreen(
                                 Toast.makeText(context, "Đã tải xong MoxhiMT-30-QT!", Toast.LENGTH_SHORT).show()
                                 withContext(Dispatchers.IO) {
                                     val dir = java.io.File(context.filesDir, "models/${ModelRegistry.MOXHI_30_QT.id}")
-                                    Ct2Translator.init(dir.absolutePath, 2)
+                                    Ct2Translator.init(dir.absolutePath)
                                 }
                             } else {
                                 TranslationService.log("LỖI: Tải MoxhiMT thất bại. Vui lòng kiểm tra mạng.")
@@ -426,7 +426,7 @@ fun MainScreen(
                                                 if (!Ct2Translator.isReady()) {
                                                     val modelDir = java.io.File(context.filesDir, "models/${selectedModel.id}")
                                                     if (!modelDir.exists()) modelDir.mkdirs()
-                                                    Ct2Translator.init(modelDir.absolutePath, threads = 2)
+                                                    Ct2Translator.init(modelDir.absolutePath)
                                                 }
                                                 val encoded = TextProcessor.encodeSource(testInput)
                                                 val translated = Ct2Translator.translate(encoded, numBeams = 1)

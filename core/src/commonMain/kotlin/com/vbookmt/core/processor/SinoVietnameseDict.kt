@@ -91,7 +91,33 @@ object SinoVietnameseDict {
         "车库" to "gara",
         "车钥匙" to "chìa khóa xe",
         "火车站" to "nhà ga",
-        "机场" to "sân bay"
+        "机场" to "sân bay",
+        "会议室" to "phòng họp",
+        "中心" to "trung tâm",
+        "内部" to "nội bộ",
+        "里面" to "bên trong",
+        "除了" to "ngoài ra",
+        "其余" to "những người còn lại",
+        "已经" to "đã",
+        "差不多" to "xấp xỉ",
+        "以后" to "sau đó",
+        "赶紧" to "vội vàng",
+        "主要" to "chủ yếu",
+        "确实" to "thực sự",
+        "休假" to "nghỉ phép",
+        "时间" to "thời gian",
+        "长了" to "dài rồi",
+        "回来" to "trở lại",
+        "没机会" to "không còn cơ hội",
+        "机会" to "cơ hội",
+        "就连" to "cho dù",
+        "恢复" to "hồi phục",
+        "回到" to "trở về",
+        "来了" to "đến rồi",
+        "再想" to "lại muốn",
+        "吴传恩" to "Ngô Truyền Ân",
+        "崔赞" to "Thôi Tán",
+        "王学骏" to "Vương Học Tuấn"
     )
 
     private val CHARS = mapOf(
@@ -100,9 +126,9 @@ object SinoVietnameseDict {
         '们' to "chúng", '的' to "của", '了' to "rồi", '是' to "là", '不' to "không",
         '在' to "tại", '有' to "có", '这' to "này", '那' to "kia", '就' to "liền",
         '也' to "cũng", '着' to "trứ", '到' to "đến", '说' to "nói", '道' to "đạo",
-        '去' to "đi", '来' to "đến", '要' to "muốn", '会' to "sẽ", '人' to "người",
+        '去' to "đi", '来' to "đến", '要' to "muốn", '会' to "hội", '人' to "người",
         '大' to "lớn", '小' to "nhỏ", '死' to "chết", '生' to "sống", '杀' to "giết",
-        '手' to "tay", '心' to "lòng", '眼' to "mắt", '头' to "đầu", '面' to "mặt",
+        '手' to "tay", '心' to "lòng", '眼' to "mắt", '头' to "đầu", '面' to "diện",
         '王' to "vương", '家' to "gia", '天' to "trời", '地' to "đất", '神' to "thần",
         '魔' to "ma", '剑' to "kiếm", '刀' to "đao", '武' to "võ", '者' to "giả",
         '宗' to "tông", '师' to "sư", '尊' to "tôn", '帝' to "đế", '皇' to "hoàng",
@@ -144,7 +170,17 @@ object SinoVietnameseDict {
         '毁' to "hủy", '灭' to "diệt", '兴' to "hưng", '亡' to "vong", '存' to "tồn",
         '殁' to "mất", '初' to "sơ", '终' to "chung", '始' to "thủy", '末' to "mạt",
         '源' to "nguồn", '本' to "bản", '末' to "mạt", '首' to "đầu", '尾' to "đuôi",
-        '顶' to "đỉnh", '底' to "đáy", '边' to "bên", '角' to "góc", '旁' to "bên"
+        '顶' to "đỉnh", '底' to "đáy", '边' to "bên", '角' to "góc", '旁' to "bên",
+        '侦' to "trinh", '查' to "tra", '议' to "nghị", '室' to "thất", '吴' to "ngô",
+        '传' to "truyền", '恩' to "ân", '崔' to "thôi", '赞' to "tán", '其' to "kì",
+        '余' to "dư", '都' to "đều", '已' to "dĩ", '经' to "kinh", '骏' to "tuấn",
+        '学' to "học", '恢' to "khôi", '复' to "phục", '差' to "sai", '以' to "dĩ",
+        '赶' to "cản", '紧' to "khẩn", '回' to "hồi", '主' to "chủ", '确' to "xác",
+        '休' to "hưu", '长' to "trường", '再' to "tái", '想' to "tưởng", '没' to "không",
+        '机' to "cơ", '部' to "bộ", '位' to "vị", '第' to "thứ", '各' to "các",
+        '同' to "đồng", '相' to "tương", '因' to "nhân", '果' to "quả", '此' to "thử",
+        '由' to "do", '自' to "tự", '及' to "cập", '与' to "dữ", '乃' to "nãi",
+        '且' to "thả", '但' to "đãn", '亦' to "diệc", '即' to "tức", '若' to "nhược"
     )
 
     fun translate(text: String): String {

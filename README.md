@@ -49,7 +49,6 @@ Extension gửi yêu cầu dịch về máy chủ nội bộ tại `http://127.0
 
 ## 📜 Tác quyền & Ghi nhận (Credits)
 
-- **Tác giả phát triển**: **[dungxnd](https://github.com/dungxnd)** - Thiết kế kiến trúc và phát triển hệ sinh thái VBookMT (Android Companion App, Windows CLI Server, vBook Extension).
 - **HachimiMT-60-QT** & **HachimiMT-40-QT** bởi **[ngocdang83](https://huggingface.co/ngocdang83)** ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)).
 - **MoxhiMT-30-QT** bởi **[DanVP](https://huggingface.co/DanVP)** ([CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)).
 - **vBook Ecosystem** bởi **[Darkrai9x](https://github.com/Darkrai9x)**.

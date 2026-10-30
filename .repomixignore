@@ -1,0 +1,50 @@
+# Gradle & Build
+.gradle/
+build/
+out/
+bin/
+
+# IDE & Editor
+.idea/
+*.iml
+*.ipr
+*.iws
+local.properties
+.vscode/
+*.swp
+
+# Kotlin / Native & Android
+*.apk
+*.aab
+*.exe
+*.dll
+*.so
+*.dylib
+*.kexe
+*.klib
+
+# Python & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+dist/
+*.egg-info/
+
+# Model checkpoints & weights
+models/
+exported_models/
+*.safetensors
+*.bin
+*.onnx
+*.spm
+
+# Test outputs & temporary benchmark files
+test_input.txt
+output_*.txt
+
+# OS files
+.DS_Store
+Thumbs.db

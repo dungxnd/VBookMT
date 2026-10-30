@@ -1,6 +1,6 @@
 # Notices & Acknowledgements (Ghi nhận Tác quyền & Bản quyền)
 
-Dự án **VBookMT** được phát triển bởi **dungxnd** và tích hợp các mô hình dịch máy, công cụ mã nguồn mở và bộ dữ liệu của các tác giả trong cộng đồng. Chúng tôi xin chân thành cảm ơn và ghi nhận bản quyền của các tác giả theo đúng điều khoản giấy phép:
+Dự án **VBookMT** được phát triển bởi **dungxnd** và tích hợp các mô hình dịch máy, công cụ mã nguồn mở và bộ dữ liệu của các tác giả trong cộng đồng. 
 
 ---
 
@@ -10,7 +10,7 @@ Dự án **VBookMT** được phát triển bởi **dungxnd** và tích hợp c�
 * **Tác giả / Nhà phát triển**: [dungxnd](https://github.com/dungxnd)
 * **Kho lưu trữ**: [`dungxnd/VBookMT`](https://github.com/dungxnd/VBookMT)
 * **Giấy phép**: [MIT License](LICENSE)
-* **Mô tả**: Thiết kế và phát triển toàn bộ hệ sinh thái VBookMT: Android Companion App (Foreground Service + Ktor Embedded Server + Material 3 UI), Windows Native CLI Server, vBook Extension và hệ thống điều phối mô hình CTranslate2 INT8 offline.
+* **Mô tả**: Thiết kế và phát triển VBookMT: Android Companion App, Windows Native CLI Server, vBook Extension.
 
 ---
 

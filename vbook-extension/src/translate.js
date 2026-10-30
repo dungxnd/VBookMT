@@ -90,8 +90,11 @@ function execute(text, from, to, source, model, style) {
     var rawServerUrl = readConfigValue("server_url", "http://127.0.0.1:8765");
     var fallbackQt = String(readConfigValue("fallback_qt", "true")) === "true";
     var notifyFallback = String(readConfigValue("notify_fallback", "false")) === "true";
-    var cfgTimeout = parseInt(readConfigValue("timeout_seconds", 15), 10);
-    var timeoutMs = (!isNaN(cfgTimeout) && cfgTimeout >= 3 && cfgTimeout <= 120) ? cfgTimeout * 1000 : 15000;
+    // 60s default: a 7k-char chapter costs ~3-5s on desktop and ~10-20s on a mid-range phone, so
+    // the old 15s default cut the request off client-side and silently fell back to QuickTranslator
+    // while the server was still legitimately translating.
+    var cfgTimeout = parseInt(readConfigValue("timeout_seconds", 60), 10);
+    var timeoutMs = (!isNaN(cfgTimeout) && cfgTimeout >= 5 && cfgTimeout <= 120) ? cfgTimeout * 1000 : 60000;
     var cleanArtifacts = String(readConfigValue("clean_crawler_artifacts", "true")) === "true";
 
     // 3. Sanitize input text
