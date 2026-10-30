@@ -4,44 +4,31 @@ Tất cả các thay đổi đáng chú ý của dự án **VBookMT** sẽ đư�
 
 ## [v1.1.0] - 2026-10-30
 
-### Added
-- Bộ nhớ bản dịch được lưu xuống đĩa và nạp lại khi khởi động: mở lại chương đã dịch sau khi app bị
-  kill không phải chạy lại model. Nhật ký nằm trong `noBackupFilesDir`, ghi thêm theo từng lô, tự nén
-  khi lớn quá 2 lần dữ liệu thật; không schema, xoá được bất cứ lúc nào.
-- `/config` nhận `chunkChars` (40–400) — độ dài mỗi đoạn dịch, thông số ảnh hưởng tốc độ nhiều nhất
-  trên ARM. Không lưu vào `SharedPreferences`: là thông số để đo, không phải tuỳ chọn người dùng.
-- `/health` thêm `cache_disk_bytes` và `cache_disk_restored`.
+### Mới
+- Mở lại chương đã dịch thì gần như hiện ngay, kể cả sau khi đã thoát app rồi mở lại. Trước đây bản
+  dịch chỉ được nhớ trong lúc app còn chạy.
+- Thẻ Hiệu năng hiện tốc độ ước tính, số giây cho một chương và số đoạn đã dịch sẵn.
+- Nút “Đo & tối ưu cho máy này” tự thử vài cấu hình trên chính máy bạn rồi nhớ cái nhanh nhất cho
+  những lần sau.
+- Chỉnh được độ dài mỗi đoạn dịch, để thử trên máy khác.
 
-### Changed
-- Việc chọn đoạn từ bộ nhớ đệm và bỏ qua đoạn không có Hán tự được làm **trước** khi chia lô, nên lô
-  gửi tới engine chỉ chứa đoạn thật sự cần dịch; đoạn trùng trong cùng chương chỉ dịch một lần; các lô
-  xếp theo độ dài để giảm padding của CTranslate2.
-- Timeout: server 110 giây, extension mặc định 120 giây (trước là 60 giây ở extension, nên client tự
-  bỏ trước khi server kịp trả kết quả).
-- Đổi model hoặc `compute_type` xoá cả bộ nhớ đệm trên đĩa, không chỉ trong RAM.
-- Chia chương chuyển vào module lõi dùng chung (test JVM, không phụ thuộc Android); màn hình và phần
-  xử lý tách theo chức năng; lớp JNI tách thành 4 module, biên dịch bằng C++20.
-- CI: thêm bước biên dịch module app, kiểm tra `plugin.zip` khớp mã nguồn, preflight so tag với
-  `versionName` và CHANGELOG, timeout + quyền tối thiểu cho từng job, và job dựng lại thư viện native
-  hàng tuần.
+### Tốt hơn
+- Chương mới dịch nhanh hơn: câu lặp trong cùng chương chỉ dịch một lần, và đoạn nào không cần model
+  thì không gửi cho model.
+- Chương dài không còn bị cắt giữa lúc đang dịch: extension chờ server lâu hơn trước khi chuyển sang
+  QuickTranslator.
+- Đoạn không có chữ Hán (số, dấu ngắt cảnh, tên Latinh) giữ nguyên văn, thay vì để model viết lại.
+- App tự chọn cấu hình hợp với máy, nên máy yếu ít nóng và đỡ hao pin hơn.
+- Mã nguồn được chia lại theo chức năng; phần quyết định cách chia chương có kiểm thử tự động.
+- Có thêm tài liệu kiến trúc cho ai muốn đọc hoặc đóng góp mã nguồn.
 
-### Fixed
-- Xoá bộ nhớ đệm không còn chạy song song với lúc đang ghi: bấm tối ưu đúng lúc đang dịch có thể làm
-  lệch số đếm dung lượng, khiến bộ nhớ đệm tự đẩy hết bản ghi về sau.
-- `plugin.zip` phát hành lệch với mã nguồn (v1.0.0 còn thời gian chờ 15 giây trong khi mã nguồn đã là
-  120 giây).
-- Cache thư viện native của CI khoá cứng `v4.5.0` trong khi script dựng CTranslate2 4.8.4, nên lần chạy
-  sau nhận header của bộ phụ thuộc khác. Khoá giờ theo nội dung script.
-- Script dựng native không cài shim `third_party/absl/...` và header abseil mà
-  `sentencepiece_processor.h` yêu cầu, nên một clone mới không thể biên dịch. Script giờ cài cả hai và
-  tự biên dịch thử một TU để kiểm tra trước khi kết thúc.
-- Script dựng native: kiểm tra trạng thái trả về của `Encode`/`Decode` (trước đây lỗi tokenizer bị nuốt
-  thành "đoạn rỗng" rồi bỏ qua im lặng), dùng overload `absl::Span` thay cho overload `std::vector` đã
-  bị deprecate, và chỉ tắt cảnh báo deprecate quanh đúng include của SentencePiece — cảnh báo trong code
-  của mình vẫn hiện.
-
-### Docs
-- `ARCHITECTURE.md`: mô tả hệ thống ở mức hộp đen — bối cảnh, khối, luồng, bất biến, nhật ký quyết định.
+### Đã sửa
+- Bấm “Đo & tối ưu” đúng lúc đang dịch có thể làm bộ nhớ đệm của app hỏng lặng lẽ, khiến những lần
+  đọc sau chậm dần. Đã sửa.
+- Gói cài extension có thể mang cấu hình cũ (thời gian chờ 15 giây thay vì 120 giây), nên bản cập nhật
+  vẫn hành xử như bản trước.
+- Một số đoạn có thể bị bỏ qua im lặng khi bộ tách từ gặp lỗi; giờ được xử lý và ghi vào nhật ký.
+- APK phát hành không còn có thể được dựng với bộ thư viện lệch với mã nguồn.
 
 ## [v1.0.0] - 2026-10-29
 
