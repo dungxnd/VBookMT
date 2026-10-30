@@ -23,9 +23,10 @@ if(EXISTS "${JNI_LIBS_DIR}/libctranslate2.so" AND EXISTS "${JNI_LIBS_DIR}/libsen
     add_library(sentencepiece SHARED IMPORTED)
     set_target_properties(sentencepiece PROPERTIES IMPORTED_LOCATION "${JNI_LIBS_DIR}/libsentencepiece.so")
 
-    # Extra roots are harmless when absent and necessary when present: SentencePiece's public
-    # header reaches its vendored absl shim through "third_party/absl/...", and that shim in turn
-    # expects the real abseil tree to be findable as "absl/...". Keep every spelling on the path.
+    # SentencePiece 0.2.3 includes real "absl/..." headers, so the installed tree resolves them
+    # directly under include/. The third_party roots below only matter for a header tree produced by
+    # the older 0.2.2 recipe, where the same includes went through vendored shims; they are skipped
+    # when absent, so one CMakeLists serves either tree.
     foreach(_vbookmt_include_root
             "${CMAKE_CURRENT_SOURCE_DIR}/include"
             "${CMAKE_CURRENT_SOURCE_DIR}/include/third_party"

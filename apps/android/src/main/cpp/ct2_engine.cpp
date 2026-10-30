@@ -199,8 +199,8 @@ std::vector<std::string> Engine::translate(const std::vector<std::string>& texts
             if (outputTokens.empty()) continue;
 
             std::string decoded;
-            // The std::vector overloads of Decode are deprecated in SentencePiece 0.2.x; the span
-            // form is the supported one and is what the deprecated wrappers forward to.
+            // The span overload is the supported Decode form; 0.2.3 removed the std::vector
+            // wrappers that used to forward to it.
             if (!targetProcessor_.Decode(absl::MakeConstSpan(outputTokens), &decoded).ok()) {
                 LOGE("SentencePiece failed to decode sequence %zu; falling back for that item", index);
                 continue;

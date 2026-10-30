@@ -34,18 +34,55 @@ ABI="arm64-v8a"
 PLATFORM="android-26"
 TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake"
 
-# Pinned dependencies. Changing either one is a deliberate act: the prebuilt .so files, the header
+# Pinned dependencies. Changing any of these is a deliberate act: the prebuilt .so files, the header
 # tree installed below, and the JNI code that includes them all have to agree.
 #
-# SentencePiece stays at v0.2.2 on purpose. v0.2.3pre1 was evaluated on 2026-10-30 and is genuinely
-# attractive: it deletes the deprecated API surface we no longer use, hardens the tokenizer against
-# malformed input (OSS-Fuzz findings we can actually hit with scraped text), and its new "Lite"
-# runtime drops Protobuf *and* Abseil - which would delete the entire absl/shim install below. It is
-# not adopted because it is a pre-release, it removes builtin_pb/protobuf-lite (what
-# SPM_USE_BUILTIN_PROTOBUF below targets), and Lite needs FlatBuffers .spm.fb models while ours are
-# classic .spm. Revisit at 0.2.3 GA; trying it is a one-line change here.
-SPM_TAG="v0.2.2"
+# SentencePiece is a pre-release here (v0.2.3pre1). What it buys over 0.2.2:
+#   - the deprecated API surface is gone, so merely including its header no longer emits ~two dozen
+#     -Wdeprecated-declarations warnings no caller can fix (ct2_engine.h stopped suppressing them);
+#   - tokenizer hardening from OSS-Fuzz: piece-id bounds checks, lattice bounds, empty-piece guards -
+#     failures that scraped novel text can actually trigger;
+#   - its public header now includes real "absl/..." paths instead of vendored third_party/absl
+#     shims, which deletes the shim-installation dance this script used to need.
+# What it costs: protobuf and abseil are no longer vendored inside its tree, so both are fetched and
+# built for Android here, plus a host protoc (step 2a). SentencePiece Lite - the dependency-free
+# FlatBuffers runtime that would remove protobuf entirely - stays off because it wants .spm.fb
+# models and ours are classic .spm. Revisit at 0.2.3 GA.
+SPM_TAG="v0.2.3pre1"
+# Exactly the protobuf the Android build links: protoc stamps its version into the generated code,
+# and a mismatch with the runtime aborts at load time instead of failing the build.
+PROTOBUF_TAG="v36.2"
 CT2_TAG="v4.8.4"
+
+# 2a. Host protoc
+#
+# 0.2.3 generates its model code from the .proto files during the build; the pre-generated copy is
+# gone. A cross build therefore needs a protoc that runs on the build machine, which the NDK
+# toolchain cannot provide. Build it from the same protobuf release the Android library links.
+if [ ! -d protobuf ]; then
+    # --recursive: protobuf's own build needs its utf8_range submodule, and this checkout is handed
+    # to the Android configure below, so it has to be complete.
+    git clone --depth 1 --recursive --branch "$PROTOBUF_TAG" https://github.com/protocolbuffers/protobuf.git protobuf
+fi
+
+echo "Building host protoc..."
+cmake -S protobuf -B build_protoc \
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+    -DCMAKE_BUILD_TYPE=Release \
+    -Dprotobuf_BUILD_TESTS=OFF \
+    -Dprotobuf_BUILD_EXAMPLES=OFF \
+    -Dprotobuf_BUILD_SHARED_LIBS=OFF
+cmake --build build_protoc --target protoc -- -j"$(nproc)"
+
+PROTOC_BIN=$(find build_protoc -maxdepth 3 -type f -name 'protoc' -perm -u+x | head -n 1 || true)
+if [ -z "$PROTOC_BIN" ]; then
+    PROTOC_BIN=$(find build_protoc -maxdepth 3 -type f -name 'protoc-*' -perm -u+x | head -n 1 || true)
+fi
+if [ -z "$PROTOC_BIN" ]; then
+    echo "ERROR: the host protoc was not built, so SentencePiece cannot generate its model code."
+    exit 1
+fi
+echo "Using host protoc: $PROTOC_BIN"
 
 # 2. Clone & Build SentencePiece
 if [ ! -d "sentencepiece" ]; then
@@ -61,9 +98,10 @@ cmake -S sentencepiece -B build_spm \
     -DANDROID_PLATFORM="$PLATFORM" \
     -DCMAKE_BUILD_TYPE=Release \
     -DSPM_ENABLE_SHARED=ON \
-    -DSPM_BUILD_SHARED_LIBS=ON \
     -DSPM_ENABLE_TCMALLOC=OFF \
-    -DSPM_USE_BUILTIN_PROTOBUF=ON \
+    -DSPM_ENABLE_LITE=OFF \
+    -DSPM_PROTOC_EXECUTABLE="$PROTOC_BIN" \
+    -DFETCHCONTENT_SOURCE_DIR_PROTOBUF="$WORK_DIR/protobuf" \
     -DSPM_BUILD_TEST=OFF \
     -DSPM_BUILD_EXAMPLES=OFF \
     -DSPM_BUILD_COMMANDS=OFF \
@@ -77,7 +115,6 @@ if [ ! -f "$WORK_DIR/install_spm/lib/libsentencepiece.so" ]; then
     cp -f build_spm/src/libsentencepiece.so "$WORK_DIR/install_spm/lib/" 2>/dev/null || true
     cp -f build_spm/libsentencepiece.so "$WORK_DIR/install_spm/lib/" 2>/dev/null || true
     cp -rf sentencepiece/src/*.h "$WORK_DIR/install_spm/include/" 2>/dev/null || true
-    cp -rf sentencepiece/third_party/absl "$WORK_DIR/install_spm/include/" 2>/dev/null || true
 fi
 
 # 3. Clone & Build CTranslate2
@@ -148,56 +185,28 @@ else
 fi
 
 # ---------------------------------------------------------------------------------------------
-# SentencePiece's absl shims.
-#
-# Its public header includes "third_party/absl/strings/string_view.h", "…/types/span.h" and
-# "…/status/status.h". Those files are NOT in its git tree - they are materialised beside the absl
-# checkout its own build used, which is why a from-source build works and an installed header tree
-# does not. Find the directory wherever that build put it and install it under the spelling the
-# header asks for. (The previous version of this script only looked in two hardcoded places, so a
-# fresh clone installed no shims at all and the tree could never compile.)
-# ---------------------------------------------------------------------------------------------
-ABSL_SHIM=$(find -L "$WORK_DIR" -path "*/third_party/absl/strings/string_view.h" -print -quit 2>/dev/null || true)
-if [ -n "$ABSL_SHIM" ]; then
-    SHIM_ROOT="${ABSL_SHIM%/strings/string_view.h}"
-    mkdir -p "$DEST_INC/third_party/absl"
-    cp -rf "$SHIM_ROOT/." "$DEST_INC/third_party/absl/"
-    echo "Installed SentencePiece's absl shims from $SHIM_ROOT"
-else
-    echo "WARNING: no third_party/absl shim directory found under $WORK_DIR."
-fi
-# ---------------------------------------------------------------------------------------------
 # Abseil headers.
 #
-# SentencePiece links against abseil, and the shims installed above forward into the real tree.
-# Take that tree from beside the shims - the very checkout that built the prebuilt .so - and refuse
-# to guess a version. A pinned clone would be a header/ABI mismatch against a library we did not
-# build with it, which is exactly the failure this section exists to prevent.
+# SentencePiece 0.2.3's public header includes "absl/status/status.h",
+# "absl/strings/string_view.h" and "absl/types/span.h" at their real paths, so the JNI code needs a
+# matching absl tree on the include path. abseil is linked statically into libsentencepiece.so and
+# our code only uses header-defined types from it, so headers alone are enough - but they have to be
+# the exact checkout SentencePiece fetched, or the two disagree about layout. Take that checkout and
+# refuse to guess. Search build_spm only: the host protoc build fetches a *different* abseil, and
+# picking that one would be the same header/library mismatch this block exists to prevent.
 # ---------------------------------------------------------------------------------------------
-ABSL_SRC=""
-if [ -n "$ABSL_SHIM" ]; then
-    ABSL_PARENT="${SHIM_ROOT%/absl}"
-    for candidate in "$ABSL_PARENT/abseil-cpp" "$ABSL_PARENT/absl"; do
-        if [ -d "$candidate/absl" ]; then
-            ABSL_SRC="$candidate"
-            break
-        fi
-    done
+ABSL_SRC=$(find -L "$WORK_DIR/build_spm" -maxdepth 6 -type d -path '*/abseil-cpp-src/absl' -print -quit 2>/dev/null || true)
+if [ -z "$ABSL_SRC" ]; then
+    ABSL_SRC=$(find -L "$WORK_DIR/build_spm" -maxdepth 6 -type d -name absl -path '*_deps*' -print -quit 2>/dev/null || true)
 fi
 
-if [ -n "$ABSL_SRC" ]; then
+if [ -n "$ABSL_SRC" ] && [ -f "$ABSL_SRC/status/status.h" ]; then
     echo "Installing abseil headers from $ABSL_SRC"
     mkdir -p "$DEST_INC/absl"
-    cp -rf "$ABSL_SRC/absl/." "$DEST_INC/absl/"
-elif [ -n "$ABSL_SHIM" ] && [ -d "$SHIM_ROOT/base" ]; then
-    # Some SentencePiece builds symlink third_party/absl straight at abseil's own absl/ directory;
-    # then the "shim" root already is the header root we need.
-    echo "Installing abseil headers from $SHIM_ROOT (the shims are abseil itself)"
-    mkdir -p "$DEST_INC/absl"
-    cp -rf "$SHIM_ROOT/." "$DEST_INC/absl/"
+    cp -rf "$ABSL_SRC/." "$DEST_INC/absl/"
 else
     echo "ERROR: could not find the abseil checkout SentencePiece was built with."
-    echo "       Expected third_party/abseil-cpp beside its absl shims, under $WORK_DIR."
+    echo "       Expected build_spm/_deps/abseil-cpp-src/absl under $WORK_DIR."
     echo "       Refusing to fall back to a pinned version: those headers must match the"
     echo "       prebuilt libsentencepiece.so, or the build succeeds and the app misbehaves."
     exit 1
