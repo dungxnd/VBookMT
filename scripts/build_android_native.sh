@@ -54,7 +54,7 @@ SPM_TAG="v0.2.3pre1"
 PROTOBUF_TAG="v36.2"
 CT2_TAG="v4.8.4"
 
-# 2a. Host protoc
+# 2. Host protoc
 #
 # 0.2.3 generates its model code from the .proto files during the build; the pre-generated copy is
 # gone. A cross build therefore needs a protoc that runs on the build machine, which the NDK
@@ -87,7 +87,7 @@ if [ -z "$PROTOC_BIN" ]; then
 fi
 echo "Using host protoc: $PROTOC_BIN"
 
-# 2. Clone & Build SentencePiece
+# 3. Clone & Build SentencePiece
 if [ ! -d "sentencepiece" ]; then
     echo "Cloning SentencePiece..."
     git clone --depth 1 --branch "$SPM_TAG" https://github.com/google/sentencepiece.git sentencepiece
@@ -123,7 +123,7 @@ if [ ! -f "$WORK_DIR/install_spm/lib/libsentencepiece.so" ]; then
     cp -rf sentencepiece/src/*.h "$WORK_DIR/install_spm/include/" 2>/dev/null || true
 fi
 
-# 3. Clone & Build CTranslate2
+# 4. Clone & Build CTranslate2
 if [ ! -d "ctranslate2" ]; then
     echo "Cloning CTranslate2..."
     git clone --depth 1 --recursive --branch "$CT2_TAG" https://github.com/OpenNMT/CTranslate2.git ctranslate2
@@ -157,7 +157,7 @@ cmake -S ctranslate2 -B build_ct2 \
 cmake --build build_ct2 --target ctranslate2 -- -j$(nproc)
 cmake --install build_ct2
 
-# 4. Copy libraries and headers into Android project
+# 5. Copy libraries and headers into Android project
 PROJECT_ROOT="$(pwd)/../.."
 DEST_JNI="$PROJECT_ROOT/apps/android/src/main/jniLibs/$ABI"
 DEST_INC="$PROJECT_ROOT/apps/android/src/main/cpp/include"
