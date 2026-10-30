@@ -74,9 +74,12 @@ cmake -S protobuf -B build_protoc \
     -Dprotobuf_BUILD_SHARED_LIBS=OFF
 cmake --build build_protoc --target protoc -- -j"$(nproc)"
 
-PROTOC_BIN=$(find build_protoc -maxdepth 3 -type f -name 'protoc' -perm -u+x | head -n 1 || true)
+# Absolute, not relative: SentencePiece runs protoc from inside its own build directory, so a bare
+# "build_protoc/..." resolves against the wrong working directory and the build stops at the first
+# generated .pb.cc with "not found".
+PROTOC_BIN=$(find "$WORK_DIR/build_protoc" -maxdepth 3 -type f -name 'protoc' -perm -u+x | head -n 1 || true)
 if [ -z "$PROTOC_BIN" ]; then
-    PROTOC_BIN=$(find build_protoc -maxdepth 3 -type f -name 'protoc-*' -perm -u+x | head -n 1 || true)
+    PROTOC_BIN=$(find "$WORK_DIR/build_protoc" -maxdepth 3 -type f -name 'protoc-*' -perm -u+x | head -n 1 || true)
 fi
 if [ -z "$PROTOC_BIN" ]; then
     echo "ERROR: the host protoc was not built, so SentencePiece cannot generate its model code."
@@ -91,12 +94,15 @@ if [ ! -d "sentencepiece" ]; then
 fi
 
 echo "Building SentencePiece for $ABI..."
+# protobuf and abseil are static and get linked into libsentencepiece.so, so their objects must be
+# position independent. Android's toolchain does not default that on for static libraries.
 cmake -S sentencepiece -B build_spm \
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" \
     -DANDROID_ABI="$ABI" \
     -DANDROID_PLATFORM="$PLATFORM" \
     -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     -DSPM_ENABLE_SHARED=ON \
     -DSPM_ENABLE_TCMALLOC=OFF \
     -DSPM_ENABLE_LITE=OFF \
