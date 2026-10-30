@@ -9,7 +9,24 @@
 #include <ctranslate2/batch_reader.h>
 #include <ctranslate2/translator.h>
 #include <ctranslate2/types.h>
+
+// SentencePiece 0.2.x defines inline wrappers for its own [[deprecated]] members inside
+// sentencepiece_processor.h, so merely including it emits ~two dozen deprecation warnings that no
+// caller can fix - they belong to the header, not to us. Scope the suppression to this one include
+// (and to compilers that need it) so a genuine deprecation in our own code still shows up.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 #include <sentencepiece_processor.h>
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 #endif
 
 namespace vbookmt {

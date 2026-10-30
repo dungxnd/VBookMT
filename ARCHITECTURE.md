@@ -228,6 +228,7 @@ corrupt by addition than by omission.
 | **AD-09** | One translation at a time, globally | Engine is not re-entrant; single-tenant phone; predictable memory and thermals | Parallel replicas — more throughput on paper, worse thermals and memory on device |
 | **AD-10** | Second host (desktop) left as a scaffold | Nothing tests it and no one maintains it; shipping it would imply support | Shipping a half-tested server because it compiles |
 | **AD-11** | Append-only journal for the memo, kept in a no-backup directory and compacted when it outgrows what it holds | Re-reads are the common case and the process is killed often, so a restart is the dominant remaining cost. A journal makes a restart invisible for the price of a few append writes per chapter. Damage is always bounded: an unparseable record ends replay there, and a file that cannot be opened at all is deleted and rebuilt | Rewriting a snapshot per chapter (measurable flash wear); SQLite/Room (schema, migrations and a codegen dependency for a regenerable key→text map) |
+| **AD-12** | SentencePiece pinned at 0.2.2, not 0.2.3pre1 | 0.2.3 deletes the deprecated surface we no longer use, hardens the tokenizer against malformed input, and its "Lite" runtime would drop Protobuf and Abseil entirely — but it is a pre-release, it removes `builtin_pb`/`protobuf-lite` that the current build flags target, and Lite needs FlatBuffers models while ours are classic `.spm` | Adopting the pre-release now: a build-flag rewrite in exchange for warnings we just silenced. Revisit at GA |
 
 ---
 

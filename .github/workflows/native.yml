@@ -40,3 +40,20 @@ jobs:
         run: |
           chmod +x scripts/build_android_native.sh
           ./scripts/build_android_native.sh
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.8.2"
+
+      # Compile our own JNI bridge against the headers just installed. Until this job existed, the
+      # only place our C++ was compiled was a release, so a broken include or a deprecation was
+      # discovered while publishing. This also proves the CMake path and the packaged .so agree.
+      - name: Compile the JNI bridge
+        run: gradle :apps:android:assembleDebug

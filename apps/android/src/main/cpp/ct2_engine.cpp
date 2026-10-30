@@ -149,7 +149,12 @@ std::vector<std::string> Engine::translate(const std::vector<std::string>& texts
             if (text.empty()) continue;
 
             std::vector<std::string> tokens;
-            sourceProcessor_.Encode(text, &tokens);
+            // Encode reports failure through its status ([[nodiscard]]). Swallowing it turned a
+            // tokenizer error into "this chunk had no tokens", i.e. a silently skipped paragraph.
+            if (!sourceProcessor_.Encode(text, &tokens).ok()) {
+                LOGE("SentencePiece failed to encode a %zu-byte chunk; skipping it", text.size());
+                continue;
+            }
             if (tokens.empty()) continue;
             // MarianMT tokenizer contract, same as the Python reference implementation.
             tokens.emplace_back(kEndOfSentenceToken);
@@ -194,7 +199,12 @@ std::vector<std::string> Engine::translate(const std::vector<std::string>& texts
             if (outputTokens.empty()) continue;
 
             std::string decoded;
-            targetProcessor_.Decode(outputTokens, &decoded);
+            // The std::vector overloads of Decode are deprecated in SentencePiece 0.2.x; the span
+            // form is the supported one and is what the deprecated wrappers forward to.
+            if (!targetProcessor_.Decode(absl::MakeConstSpan(outputTokens), &decoded).ok()) {
+                LOGE("SentencePiece failed to decode sequence %zu; falling back for that item", index);
+                continue;
+            }
             if (decoded.empty()) continue;
 
             translations[slots[index]] = std::move(decoded);
@@ -216,7 +226,9 @@ int Engine::tokenCount(std::string_view text) const {
     if (text.empty()) return 0;
 
     std::vector<std::string> tokens;
-    sourceProcessor_.Encode(std::string(text), &tokens);
+    // 0 already means "count unknown" to the caller (it then skips token-based budgeting), which is
+    // the right answer for a tokenizer failure too.
+    if (!sourceProcessor_.Encode(std::string(text), &tokens).ok()) return 0;
     return static_cast<int>(tokens.size()) + 1;  // + </s>
 }
 

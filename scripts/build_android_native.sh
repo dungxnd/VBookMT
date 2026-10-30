@@ -34,10 +34,23 @@ ABI="arm64-v8a"
 PLATFORM="android-26"
 TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake"
 
+# Pinned dependencies. Changing either one is a deliberate act: the prebuilt .so files, the header
+# tree installed below, and the JNI code that includes them all have to agree.
+#
+# SentencePiece stays at v0.2.2 on purpose. v0.2.3pre1 was evaluated on 2026-10-30 and is genuinely
+# attractive: it deletes the deprecated API surface we no longer use, hardens the tokenizer against
+# malformed input (OSS-Fuzz findings we can actually hit with scraped text), and its new "Lite"
+# runtime drops Protobuf *and* Abseil - which would delete the entire absl/shim install below. It is
+# not adopted because it is a pre-release, it removes builtin_pb/protobuf-lite (what
+# SPM_USE_BUILTIN_PROTOBUF below targets), and Lite needs FlatBuffers .spm.fb models while ours are
+# classic .spm. Revisit at 0.2.3 GA; trying it is a one-line change here.
+SPM_TAG="v0.2.2"
+CT2_TAG="v4.8.4"
+
 # 2. Clone & Build SentencePiece
 if [ ! -d "sentencepiece" ]; then
     echo "Cloning SentencePiece..."
-    git clone --depth 1 --branch v0.2.2 https://github.com/google/sentencepiece.git sentencepiece
+    git clone --depth 1 --branch "$SPM_TAG" https://github.com/google/sentencepiece.git sentencepiece
 fi
 
 echo "Building SentencePiece for $ABI..."
@@ -70,7 +83,7 @@ fi
 # 3. Clone & Build CTranslate2
 if [ ! -d "ctranslate2" ]; then
     echo "Cloning CTranslate2..."
-    git clone --depth 1 --recursive --branch v4.8.4 https://github.com/OpenNMT/CTranslate2.git ctranslate2
+    git clone --depth 1 --recursive --branch "$CT2_TAG" https://github.com/OpenNMT/CTranslate2.git ctranslate2
 fi
 
 # Patch CMakeLists to be compatible with CMake 4.x if needed

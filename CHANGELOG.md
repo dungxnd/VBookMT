@@ -35,6 +35,10 @@ Tất cả các thay đổi đáng chú ý của dự án **VBookMT** sẽ đư�
 - Script dựng native không cài shim `third_party/absl/...` và header abseil mà
   `sentencepiece_processor.h` yêu cầu, nên một clone mới không thể biên dịch. Script giờ cài cả hai và
   tự biên dịch thử một TU để kiểm tra trước khi kết thúc.
+- Script dựng native: kiểm tra trạng thái trả về của `Encode`/`Decode` (trước đây lỗi tokenizer bị nuốt
+  thành "đoạn rỗng" rồi bỏ qua im lặng), dùng overload `absl::Span` thay cho overload `std::vector` đã
+  bị deprecate, và chỉ tắt cảnh báo deprecate quanh đúng include của SentencePiece — cảnh báo trong code
+  của mình vẫn hiện.
 
 ### Docs
 - `ARCHITECTURE.md`: mô tả hệ thống ở mức hộp đen — bối cảnh, khối, luồng, bất biến, nhật ký quyết định.
