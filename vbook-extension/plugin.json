@@ -2,7 +2,7 @@
   "metadata": {
     "name": "VBookMT (Offline AI)",
     "author": "VBookMT (Models: ngocdang83 & DanVP)",
-    "version": 1,
+    "version": 2,
     "source": "https://github.com/DungxND/VBookMT",
     "description": "Dịch truyện Trung offline bằng model AI Hachimi & Moxhi, chuẩn xưng hô convert, không cần mạng.",
     "locale": "vi_VN",
@@ -15,7 +15,6 @@
   "script": {
     "config": "config.js",
     "language": "language.js",
-    "model": "model.js",
     "translate": "translate.js"
   },
   "config": {
@@ -43,10 +42,10 @@
     },
     "timeout_seconds": {
       "title": "Thời gian chờ tối đa (giây)",
-      "subtitle": "Thời gian chờ server phản hồi trước khi thử lại hoặc fallback (5 - 60s)",
+      "subtitle": "Thời gian chờ server phản hồi trước khi thử lại hoặc fallback (5 - 120s). Nên lớn hơn timeout phía server (110s)",
       "mode": "input",
       "format": "number",
-      "default": 15
+      "default": 120
     },
     "clean_crawler_artifacts": {
       "title": "Lọc số bình luận rác cuối đoạn (Crawler artifacts)",

@@ -12,8 +12,8 @@ android {
         applicationId = "vn.dungxnd.vbookmt"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         ndk {
             abiFilters.addAll(listOf("arm64-v8a"))
@@ -21,7 +21,7 @@ android {
 
         externalNativeBuild {
             cmake {
-                cppFlags += listOf("-std=c++17", "-O3")
+                cppFlags += listOf("-std=c++20", "-O3")
                 arguments += listOf("-DANDROID_STL=c++_shared")
             }
         }

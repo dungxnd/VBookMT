@@ -133,15 +133,92 @@ else
     cp -rf "$WORK_DIR/sentencepiece/src/sentencepiece_trainer.h" "$DEST_INC/" 2>/dev/null || true
     find "$WORK_DIR/sentencepiece/src" -name "*.h" -not -path "*/third_party/*" -exec cp -f {} "$DEST_INC/" \; 2>/dev/null || true
 fi
-# Copy absl headers required by SentencePiece
-if [ -d "$WORK_DIR/sentencepiece/third_party/absl" ]; then
-    mkdir -p "$DEST_INC/third_party"
-    cp -rf "$WORK_DIR/sentencepiece/third_party/absl" "$DEST_INC/third_party/" 2>/dev/null || true
+
+# ---------------------------------------------------------------------------------------------
+# SentencePiece's absl shims.
+#
+# Its public header includes "third_party/absl/strings/string_view.h", "…/types/span.h" and
+# "…/status/status.h". Those files are NOT in its git tree - they are materialised beside the absl
+# checkout its own build used, which is why a from-source build works and an installed header tree
+# does not. Find the directory wherever that build put it and install it under the spelling the
+# header asks for. (The previous version of this script only looked in two hardcoded places, so a
+# fresh clone installed no shims at all and the tree could never compile.)
+# ---------------------------------------------------------------------------------------------
+ABSL_SHIM=$(find -L "$WORK_DIR" -path "*/third_party/absl/strings/string_view.h" -print -quit 2>/dev/null || true)
+if [ -n "$ABSL_SHIM" ]; then
+    SHIM_ROOT="${ABSL_SHIM%/strings/string_view.h}"
+    mkdir -p "$DEST_INC/third_party/absl"
+    cp -rf "$SHIM_ROOT/." "$DEST_INC/third_party/absl/"
+    echo "Installed SentencePiece's absl shims from $SHIM_ROOT"
+else
+    echo "WARNING: no third_party/absl shim directory found under $WORK_DIR."
 fi
-if [ -d "$WORK_DIR/sentencepiece/src/third_party/absl" ]; then
-    mkdir -p "$DEST_INC/third_party"
-    cp -rf "$WORK_DIR/sentencepiece/src/third_party/absl" "$DEST_INC/third_party/" 2>/dev/null || true
+# ---------------------------------------------------------------------------------------------
+# Abseil headers.
+#
+# SentencePiece links against abseil, and the shims installed above forward into the real tree.
+# Take that tree from beside the shims - the very checkout that built the prebuilt .so - and refuse
+# to guess a version. A pinned clone would be a header/ABI mismatch against a library we did not
+# build with it, which is exactly the failure this section exists to prevent.
+# ---------------------------------------------------------------------------------------------
+ABSL_SRC=""
+if [ -n "$ABSL_SHIM" ]; then
+    ABSL_PARENT="${SHIM_ROOT%/absl}"
+    for candidate in "$ABSL_PARENT/abseil-cpp" "$ABSL_PARENT/absl"; do
+        if [ -d "$candidate/absl" ]; then
+            ABSL_SRC="$candidate"
+            break
+        fi
+    done
 fi
+
+if [ -n "$ABSL_SRC" ]; then
+    echo "Installing abseil headers from $ABSL_SRC"
+    mkdir -p "$DEST_INC/absl"
+    cp -rf "$ABSL_SRC/absl/." "$DEST_INC/absl/"
+elif [ -n "$ABSL_SHIM" ] && [ -d "$SHIM_ROOT/base" ]; then
+    # Some SentencePiece builds symlink third_party/absl straight at abseil's own absl/ directory;
+    # then the "shim" root already is the header root we need.
+    echo "Installing abseil headers from $SHIM_ROOT (the shims are abseil itself)"
+    mkdir -p "$DEST_INC/absl"
+    cp -rf "$SHIM_ROOT/." "$DEST_INC/absl/"
+else
+    echo "ERROR: could not find the abseil checkout SentencePiece was built with."
+    echo "       Expected third_party/abseil-cpp beside its absl shims, under $WORK_DIR."
+    echo "       Refusing to fall back to a pinned version: those headers must match the"
+    echo "       prebuilt libsentencepiece.so, or the build succeeds and the app misbehaves."
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------------------------
+# Prove the tree works before anything depends on it.
+#
+# A stale CI cache once restored a header set that could not satisfy sentencepiece_processor.h,
+# and the failure only surfaced minutes later while building the APK. One syntax-only compile
+# turns that into an immediate, obvious failure at the point the tree was created.
+# ---------------------------------------------------------------------------------------------
+echo "Verifying the installed header tree compiles..."
+PREBUILT_DIR=$(ls -d "$ANDROID_NDK_HOME"/toolchains/llvm/prebuilt/* 2>/dev/null | head -n 1)
+cat > verify_headers.cpp <<'EOF'
+#include <ctranslate2/translator.h>
+#include <sentencepiece_processor.h>
+int main() { return 0; }
+EOF
+"$PREBUILT_DIR/bin/clang++" \
+    --target=aarch64-none-linux-android26 \
+    --sysroot="$PREBUILT_DIR/sysroot" \
+    -std=c++20 \
+    -fsyntax-only \
+    -I"$DEST_INC" \
+    -I"$DEST_INC/third_party" \
+    -I"$DEST_INC/third_party/absl" \
+    verify_headers.cpp \
+    || {
+        echo "ERROR: the installed header tree does not compile (see the error above)."
+        echo "       SentencePiece needs real abseil headers alongside its own."
+        exit 1
+    }
+echo "Header tree verified."
 
 echo "Native libraries and headers successfully installed for Android!"
 ls -lh "$DEST_JNI"

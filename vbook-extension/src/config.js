@@ -21,8 +21,8 @@ function execute() {
         },
         timeout_seconds: {
             title: "Thời gian chờ tối đa (giây)",
-            subtitle: "Thời gian chờ server phản hồi trước khi thử lại hoặc fallback (5 - 60s)",
-            default: "15",
+            subtitle: "Thời gian chờ server phản hồi trước khi thử lại hoặc fallback (5 - 120s). Nên lớn hơn timeout phía server (110s) để nhận được lỗi rõ ràng thay vì tự bỏ giữa chừng",
+            default: "120",
             mode: "input",
             format: "number"
         },

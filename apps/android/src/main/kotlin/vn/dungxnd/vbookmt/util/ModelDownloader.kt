@@ -75,7 +75,7 @@ object ModelDownloader {
                     instanceFollowRedirects = true
                     connectTimeout = 25_000
                     readTimeout = 60_000
-                    setRequestProperty("User-Agent", "VBookMT-Android/1.0.0")
+                    setRequestProperty("User-Agent", "VBookMT-Android/1.1.0")
                     connect()
                 }
 
@@ -87,7 +87,7 @@ object ModelDownloader {
                         instanceFollowRedirects = true
                         connectTimeout = 25_000
                         readTimeout = 60_000
-                        setRequestProperty("User-Agent", "VBookMT-Android/1.0.0")
+                        setRequestProperty("User-Agent", "VBookMT-Android/1.1.0")
                         connect()
                     }
                 }
@@ -100,7 +100,7 @@ object ModelDownloader {
                         instanceFollowRedirects = true
                         connectTimeout = 25_000
                         readTimeout = 60_000
-                        setRequestProperty("User-Agent", "VBookMT-Android/1.0.0")
+                        setRequestProperty("User-Agent", "VBookMT-Android/1.1.0")
                         connect()
                     }
                 }

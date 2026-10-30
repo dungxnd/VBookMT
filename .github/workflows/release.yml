@@ -18,17 +18,61 @@ on:
         description: 'Mark as Pre-release'
         type: boolean
         default: false
+# A tag push and a manual dispatch for the same version must never overlap: publishing a release is
+# not idempotent, so a running release is never cancelled by a newer one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read  # every job reads; only the publish job is granted write, further down
 
 jobs:
+  # =========================================================================
+  # 0. Preflight - does the tag match what the code says it is?
+  # =========================================================================
+  preflight:
+    name: Verify tag vs manifest & changelog
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Fails in seconds instead of after a ten-minute native build: a tag that disagrees with
+      # versionName publishes an APK claiming a different version, and a tag with no CHANGELOG
+      # section publishes empty release notes.
+      - name: Check version consistency
+        env:
+          TAG_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os, pathlib, re, sys
+
+          tag = os.environ["TAG_REF"].strip().lstrip("v")
+          gradle = pathlib.Path("apps/android/build.gradle.kts").read_text(encoding="utf-8")
+          match = re.search(r'versionName\s*=\s*"([^"]+)"', gradle)
+          changelog = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+          problems = []
+          if not match:
+              problems.append("could not read versionName from apps/android/build.gradle.kts")
+          elif match.group(1) != tag:
+              problems.append(f"versionName is {match.group(1)!r} but the tag is {tag!r}")
+          if f"## [v{tag}]" not in changelog:
+              problems.append(f"CHANGELOG.md has no '## [v{tag}]' section")
+
+          print("\n".join(problems) if problems else f"tag v{tag} matches versionName and CHANGELOG")
+          sys.exit(1 if problems else 0)
+          PY
   # =========================================================================
   # 1. Build Android APK
   # =========================================================================
   build-android:
     name: Build Android APK
     runs-on: ubuntu-latest
+    needs: preflight
+    timeout-minutes: 60
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -54,7 +98,11 @@ jobs:
           path: |
             apps/android/src/main/jniLibs
             apps/android/src/main/cpp/include
-          key: android-native-ct2-v4.5.0-arm64
+          # Keyed on the build script's content. It used to hardcode "v4.5.0" while the script builds
+          # CTranslate2 4.8.4, so a cache hit restored prebuilt headers from a different dependency
+          # set than the sources expect - which broke this very job on a missing absl header.
+          # No restore-keys on purpose: a partial restore is the bug, not the mitigation.
+          key: android-native-${{ hashFiles('scripts/build_android_native.sh') }}-arm64-v8a
 
       - name: Build CTranslate2 & SentencePiece Native Libraries
         if: steps.cache-native-libs.outputs.cache-hit != 'true'
@@ -83,6 +131,8 @@ jobs:
   build-windows:
     name: Build Windows Native App
     runs-on: windows-latest
+    needs: preflight
+    timeout-minutes: 45
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -133,6 +183,8 @@ jobs:
   package-extension:
     name: Package vBook Extension
     runs-on: ubuntu-latest
+    needs: preflight
+    timeout-minutes: 10
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -159,8 +211,11 @@ jobs:
   # =========================================================================
   release:
     name: Publish GitHub Release
-    needs: [build-android, build-windows, package-extension]
+    needs: [preflight, build-android, build-windows, package-extension]
+    permissions:
+      contents: write  # the only job that publishes anything
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
