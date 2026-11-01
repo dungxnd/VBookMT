@@ -33,6 +33,7 @@ import vn.dungxnd.vbookmt.service.ChunkTranslator
 import vn.dungxnd.vbookmt.service.Engines
 import vn.dungxnd.vbookmt.service.ServiceContract
 import vn.dungxnd.vbookmt.service.ServiceState
+import vn.dungxnd.vbookmt.service.onnx.OnnxTranslator
 import vn.dungxnd.vbookmt.service.TranslationService
 import vn.dungxnd.vbookmt.ui.components.BackgroundOptimizationCard
 import vn.dungxnd.vbookmt.ui.components.DebugLogCard
@@ -125,9 +126,9 @@ fun MainScreen(
             // Warm the memo from disk first: the quick test and a re-opened chapter then cost nothing,
             // even when the app was killed between reads.
             CacheStore.attach(context)
-            if (!Engines.isActiveReady()) {
-                val modelDir = java.io.File(context.filesDir, "models/${selectedModel.id}")
-                if (!modelDir.exists()) modelDir.mkdirs()
+            val modelDir = java.io.File(context.filesDir, "models/${selectedModel.id}")
+            if (!modelDir.exists()) modelDir.mkdirs()
+            if (!OnnxTranslator.matchesModelDir(modelDir)) {
                 // A tuned phone keeps its measured thread count; otherwise init picks the default.
                 PerformanceTuner.applySaved(context, modelDir) ||
                     Engines.ensureActiveLoaded(modelDir)

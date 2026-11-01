@@ -42,7 +42,7 @@ object WindowsPerformanceTuner {
             initCandidate = { threads ->
                 WindowsTranslator.setThreads(threads)
                 WindowsTranslator.setBatchSize(32)
-                WindowsTranslator.init()
+                WindowsTranslator.init(threads = threads, silent = true)
             },
             benchmarkFn = { batch ->
                 WindowsOnnxEngine.benchmarkMs(batch)
@@ -61,8 +61,12 @@ object WindowsPerformanceTuner {
             }
         }
 
-        WindowsTranslator.setThreads(winner.threads)
-        WindowsTranslator.init()
+        if (WindowsTranslator.activeThreads != winner.threads) {
+            WindowsTranslator.setThreads(winner.threads)
+            WindowsTranslator.init(threads = winner.threads, silent = true)
+        }
+
+
 
         WindowsState.forgetCacheEntries(
             BenchmarkProse.PARAGRAPHS.map {

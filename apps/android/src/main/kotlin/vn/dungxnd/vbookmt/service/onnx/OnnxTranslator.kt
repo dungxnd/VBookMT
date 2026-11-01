@@ -24,13 +24,19 @@ object OnnxTranslator {
     fun setProviderOverride(id: String) = host.setProviderOverride(id)
     fun setThreads(value: Int) = host.setThreads(value)
     fun isReady(): Boolean = host.isReady()
+    fun matchesModelDir(dir: File?): Boolean = host.matchesModelDir(dir)
     fun getActiveModelPath(): String? = host.getActiveModelPath()
     fun setBatchSize(value: Int) = host.setBatchSize(value)
 
     @Synchronized
-    fun init(modelDir: File, provider: OnnxProvider? = null): Boolean {
+    fun init(
+        modelDir: File,
+        provider: OnnxProvider? = null,
+        onLog: ((String) -> Unit)? = null
+    ): Boolean {
+        val logger = onLog ?: { ServiceState.log(it) }
         if (!NativeTokenizer.load(modelDir.absolutePath)) {
-            ServiceState.log("ONNX: không nạp được tokenizer (thiếu .spm hoặc thư viện native)")
+            logger("ONNX: không nạp được tokenizer (thiếu .spm hoặc thư viện native)")
             return false
         }
         val tokenizer = DelegateOnnxTokenizer(
@@ -47,7 +53,7 @@ object OnnxTranslator {
             tokenizer = tokenizer,
             threads = threads,
             provider = targetProvider,
-            onLog = { ServiceState.log(it) }
+            onLog = logger
         )
         if (ok) {
             Log.i(TAG, "ONNX model loaded at ${modelDir.absolutePath} on $providerLabel")

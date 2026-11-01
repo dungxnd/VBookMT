@@ -20,13 +20,19 @@ object WindowsOnnxEngine {
 
     fun setThreads(value: Int) = host.setThreads(value)
     fun isReady(): Boolean = host.isReady()
+    fun matchesModelDir(dir: File?): Boolean = host.matchesModelDir(dir)
     fun getActiveModelPath(): String? = host.getActiveModelPath()
     fun setBatchSize(value: Int) = host.setBatchSize(value)
 
     @Synchronized
-    fun init(modelDir: File, provider: OnnxProvider? = null): Boolean {
+    fun init(
+        modelDir: File,
+        provider: OnnxProvider? = null,
+        onLog: ((String) -> Unit)? = null
+    ): Boolean {
+        val logger = onLog ?: { WindowsState.log(it) }
         if (!WindowsNativeTokenizer.load(modelDir.absolutePath)) {
-            WindowsState.log("ONNX: không nạp được tokenizer (thiếu .spm hoặc thư viện native)")
+            logger("ONNX: không nạp được tokenizer (thiếu .spm hoặc thư viện native)")
             return false
         }
 
@@ -41,7 +47,7 @@ object WindowsOnnxEngine {
             tokenizer = tokenizer,
             threads = threads,
             provider = host.resolveProvider(provider ?: OnnxProvider.defaultForPlatform()),
-            onLog = { WindowsState.log(it) }
+            onLog = logger
         )
     }
 

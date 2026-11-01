@@ -2,6 +2,17 @@
 
 Tất cả các thay đổi đáng chú ý của dự án **VBookMT** sẽ được ghi chép tại đây theo định dạng [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v1.2.2] - 2026-11-02
+
+### Sửa lỗi
+- **Khắc phục lỗi nạp lại mô hình ONNX liên tục**:
+  - Sửa lỗi kiểm tra đường dẫn mô hình khiến ONNX Runtime bị hủy và nạp lại từ đầu mỗi 3–5 giây khi vBook gửi yêu cầu dịch từng đoạn.
+  - Chuẩn hóa đường dẫn mô hình (`canonicalPath`) giữa các tiến trình và môi trường lưu trữ (giải quyết triệt để sự khác biệt symlink `/data/data` vs `/data/user/0` trên Android và định dạng ký tự ổ đĩa không phân biệt hoa/thường trên Windows).
+  - Bổ sung cơ chế khóa đồng thời (`Mutex` double-checked locking) trên Android nhằm ngăn chặn xung đột khởi tạo song song khi vừa mở ứng dụng.
+  - Tối ưu đường dẫn nhanh (`fast-path` readiness check) trên cả Windows và Android: bỏ qua việc khởi tạo lại và tránh ghi log lặp khi mô hình mục tiêu đã sẵn sàng trong bộ nhớ RAM.
+  - **Làm sạch nhật ký khi đo hiệu năng (Benchmark)**: Loại bỏ thông báo "ONNX sẵn sàng" lặp lại khi thử nghiệm từng mức luồng CPU (2, 4, 6...); thay bằng các dòng thông báo tiến trình đo đạc và kết quả từng cấu hình rõ ràng.
+- **Cập nhật tài liệu**: Ghi chú rõ ràng việc chuyển đổi hoàn toàn sang `CPUExecutionProvider` tối ưu đa luồng và không còn sử dụng Qualcomm QNN.
+
 ## [v1.2.1] - 2026-11-01
 
 ### Thêm mới

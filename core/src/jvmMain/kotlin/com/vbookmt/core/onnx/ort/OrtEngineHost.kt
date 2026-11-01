@@ -12,6 +12,18 @@ class OrtEngineHost {
     companion object {
         const val DEFAULT_MAX_BATCH_SIZE = 16
         const val MAX_STEPS = 448
+
+        fun isSamePath(pathA: String?, pathB: String?): Boolean {
+            if (pathA == null || pathB == null) return false
+            if (pathA == pathB) return true
+            val isWindows = System.getProperty("os.name")?.lowercase()?.contains("win") == true
+            if (pathA.equals(pathB, ignoreCase = isWindows)) return true
+            return runCatching {
+                val cA = File(pathA).canonicalPath
+                val cB = File(pathB).canonicalPath
+                cA.equals(cB, ignoreCase = isWindows)
+            }.getOrDefault(false)
+        }
     }
 
     @Volatile
@@ -82,6 +94,17 @@ class OrtEngineHost {
 
     fun getActiveModelPath(): String? = activeModelPath
 
+    /**
+     * Returns true if the engine is ready and its active model matches [dir], accounting for
+     * canonical path resolution, symlinks, and OS filesystem casing conventions.
+     */
+    fun matchesModelDir(dir: File?): Boolean {
+        if (dir == null || !isReady()) return false
+        val active = activeModelPath ?: return false
+        val targetPath = runCatching { dir.canonicalPath }.getOrDefault(dir.absolutePath)
+        return isSamePath(active, targetPath)
+    }
+
     fun setBatchSize(value: Int) {
         maxBatchSize = value.coerceIn(1, 64)
     }
@@ -105,7 +128,7 @@ class OrtEngineHost {
             )
             loaded = model
             engine = OnnxDecodeEngine(model.model)
-            activeModelPath = modelDir.absolutePath
+            activeModelPath = runCatching { modelDir.canonicalPath }.getOrDefault(modelDir.absolutePath)
             activeThreads = threads
             providerLabel = model.provider.toString()
             if (model.provider.fellBack) {

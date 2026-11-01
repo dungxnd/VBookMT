@@ -46,8 +46,13 @@ object WindowsServer {
         override fun requestCount(): Int = WindowsState.requestCount.value
         override fun inFlightCount(): Int = WindowsState.inFlight.get()
 
-        override suspend fun ensureReady(): Boolean =
-            WindowsTranslator.isReady() || WindowsTranslator.init()
+        override suspend fun ensureReady(): Boolean {
+            val spec = ModelRegistry.getById(WindowsState.activeModel.value)
+            val targetDir = File(WindowsState.modelsDir, spec.id)
+            return WindowsOnnxEngine.matchesModelDir(targetDir) || WindowsTranslator.init(spec.id)
+        }
+
+
 
         override suspend fun executeTranslate(text: String): String =
             WindowsTranslator.translate(text)
@@ -89,7 +94,7 @@ object WindowsServer {
                 val engine = KtorTranslatorServer.create(
                     port = PORT,
                     host = currentHost,
-                    serviceTitle = "VBookMT Desktop 1.2.1",
+                    serviceTitle = "VBookMT Desktop 1.2.2",
                     service = Service
                 )
                 engine.start(wait = false)

@@ -127,7 +127,7 @@ object ModelDownloader {
             modelSpec = modelSpec,
             variant = targetVariant,
             currentInstalledVariant = installedVariant(context, modelSpec),
-            userAgent = "VBookMT-Android/1.2.1",
+            userAgent = "VBookMT-Android/1.2.2",
             log = { Log.i(TAG, it) },
             onProgress = onProgress
         )

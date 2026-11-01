@@ -101,7 +101,7 @@ object WindowsModelDownloader {
             modelSpec = modelSpec,
             variant = targetVariant,
             currentInstalledVariant = installedVariant(modelSpec),
-            userAgent = "VBookMT-Desktop/1.2.1",
+            userAgent = "VBookMT-Desktop/1.2.2",
             log = { WindowsState.log(it) },
             onProgress = onProgress
         )

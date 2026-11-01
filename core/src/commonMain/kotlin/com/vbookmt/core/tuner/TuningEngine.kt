@@ -108,6 +108,7 @@ object TuningEngine {
             for (threads in candidates) {
                 done++
                 onProgress?.invoke(done, total)
+                onLog?.invoke("Đo thử nghiệm: $threads luồng ($done/$total)...")
                 if (!initCandidate(threads)) {
                     onLog?.invoke("Bỏ qua $threads luồng: không nạp được engine")
                     continue
@@ -115,7 +116,7 @@ object TuningEngine {
 
                 val speed = measureThroughput(paragraphs, runs = 3, benchmarkFn = benchmarkFn)
                 if (speed > 0) {
-                    onLog?.invoke("threads=$threads -> $speed ký tự/s")
+                    onLog?.invoke("Cấu hình $threads luồng -> $speed ký tự/s")
                     results.add(
                         TuningResult(
                             threads = threads,

@@ -60,32 +60,50 @@ object WindowsTranslator {
     suspend fun init(
         modelId: String = WindowsState.activeModel.value,
         threads: Int = 0,
+        silent: Boolean = false,
     ): Boolean = withContext(Dispatchers.IO) {
+        val spec = ModelRegistry.getById(modelId)
+        val modelDir = File(WindowsState.modelsDir, spec.id)
+
+        if (threads <= 0 && WindowsOnnxEngine.matchesModelDir(modelDir)) {
+            WindowsState.setActiveModel(spec.id)
+            return@withContext true
+        }
+
         gate.withLock {
-            val spec = ModelRegistry.getById(modelId)
-            val modelDir = File(WindowsState.modelsDir, spec.id)
+            if (threads <= 0 && WindowsOnnxEngine.matchesModelDir(modelDir)) {
+                WindowsState.setActiveModel(spec.id)
+                return@withLock true
+            }
 
             if (!WindowsModelDownloader.isModelReady(spec)) {
-                WindowsState.log("Mô hình ${spec.name} chưa tải xong trên máy")
+                if (!silent) WindowsState.log("Mô hình ${spec.name} chưa tải xong trên máy")
                 return@withLock false
             }
 
             val native = WindowsNativeTokenizer.nativeDir()
             if (!WindowsNativeTokenizer.ensureLoaded(native)) {
-                WindowsState.log(
-                    "LỖI: ${WindowsNativeTokenizer.loadError() ?: "không nạp được thư viện native"}"
-                )
+                if (!silent) {
+                    WindowsState.log(
+                        "LỖI: ${WindowsNativeTokenizer.loadError() ?: "không nạp được thư viện native"}"
+                    )
+                }
                 return@withLock false
             }
 
             if (threads > 0) WindowsOnnxEngine.setThreads(threads)
-            WindowsState.log("Nạp ONNX: ${spec.name}")
-            val ok = WindowsOnnxEngine.init(modelDir)
+            if (!silent) WindowsState.log("Nạp ONNX: ${spec.name}")
+            val ok = WindowsOnnxEngine.init(
+                modelDir = modelDir,
+                onLog = if (silent) {{}} else null
+            )
             if (ok) {
                 WindowsState.setActiveModel(spec.id)
-                WindowsState.log("Sẵn sàng: ${spec.name} (ONNX, ${WindowsOnnxEngine.providerLabel})")
+                if (!silent) {
+                    WindowsState.log("Sẵn sàng: ${spec.name} (ONNX, ${WindowsOnnxEngine.providerLabel})")
+                }
             } else {
-                WindowsState.log("LỖI: ONNX không nạp được mô hình ${spec.name}")
+                if (!silent) WindowsState.log("LỖI: ONNX không nạp được mô hình ${spec.name}")
             }
             ok
         }
@@ -94,9 +112,10 @@ object WindowsTranslator {
     suspend fun translate(rawText: String, numBeams: Int = 1): String = withContext(Dispatchers.IO) {
         if (rawText.isBlank()) return@withContext ""
 
-        val activeTarget = File(WindowsState.modelsDir, WindowsState.activeModel.value).absolutePath
-        if (!isReady() || WindowsOnnxEngine.getActiveModelPath() != activeTarget) {
-            init()
+        val spec = ModelRegistry.getById(WindowsState.activeModel.value)
+        val targetDir = File(WindowsState.modelsDir, spec.id)
+        if (!WindowsOnnxEngine.matchesModelDir(targetDir)) {
+            init(modelId = spec.id)
             if (!isReady()) {
                 throw IllegalStateException("Mô hình chưa sẵn sàng hoặc chưa được tải về.")
             }

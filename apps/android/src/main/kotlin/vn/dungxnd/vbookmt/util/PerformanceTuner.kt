@@ -9,6 +9,7 @@ import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import vn.dungxnd.vbookmt.service.ServiceState
 import vn.dungxnd.vbookmt.service.onnx.OnnxTranslator
 
 /**
@@ -106,10 +107,12 @@ object PerformanceTuner {
         val previousThreads = OnnxTranslator.activeThreads
         val previousBatch = OnnxTranslator.maxBatchSize
 
-        if (!OnnxTranslator.init(modelDir)) {
+        if (!OnnxTranslator.matchesModelDir(modelDir) && !OnnxTranslator.init(modelDir, onLog = {})) {
             Log.w(TAG, "autoTune: engine not available for ${modelDir.absolutePath}")
             return TuneResult.Failure("Không nạp được mô hình để đo.")
         }
+
+        ServiceState.log("Bắt đầu đo hiệu năng phần cứng...")
 
         val threads = candidateThreads()
         val outcome = TuningEngine.sweepThreads(
@@ -119,7 +122,7 @@ object PerformanceTuner {
             computeType = "",
             initCandidate = { threadCount ->
                 OnnxTranslator.setThreads(threadCount)
-                OnnxTranslator.init(modelDir)
+                OnnxTranslator.init(modelDir, onLog = {})
             },
             benchmarkFn = { batch ->
                 OnnxTranslator.benchmarkMs(batch)
@@ -127,7 +130,7 @@ object PerformanceTuner {
             onProgress = { done, total ->
                 _progress.value = done to total
             },
-            onLog = { Log.i(TAG, it) }
+            onLog = { ServiceState.log(it); Log.i(TAG, it) }
         )
 
         return when (outcome) {
@@ -135,18 +138,20 @@ object PerformanceTuner {
                 val winner = outcome.tuning
                 OnnxTranslator.setThreads(winner.threads)
                 OnnxTranslator.setBatchSize(winner.maxBatch)
-                OnnxTranslator.init(modelDir)
+                OnnxTranslator.init(modelDir, onLog = {})
                 save(context, winner)
                 _progress.value = 0 to 0
+                ServiceState.log("Đã chọn cấu hình tốt nhất: ${winner.detailText} → ${winner.speedText}")
                 Log.i(TAG, "autoTune picked ${winner.detailText} -> ${winner.speedText}")
                 TuneResult.Success(winner)
             }
             is TuningEngine.SweepOutcome.Failure -> {
                 OnnxTranslator.setThreads(previousThreads.takeIf { it > 0 } ?: 0)
                 OnnxTranslator.setBatchSize(previousBatch)
-                OnnxTranslator.init(modelDir)
+                OnnxTranslator.init(modelDir, onLog = {})
                 _progress.value = 0 to 0
                 Log.w(TAG, "autoTune found no winner: ${outcome.reason}")
+                ServiceState.log("Đo hiệu năng thất bại: ${outcome.reason}")
                 TuneResult.Failure(outcome.reason)
             }
         }

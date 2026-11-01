@@ -25,6 +25,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import vn.dungxnd.vbookmt.MainActivity
 import vn.dungxnd.vbookmt.service.onnx.OnnxTranslator
 import vn.dungxnd.vbookmt.util.EnergyHarness
@@ -50,6 +52,8 @@ class TranslationService : Service() {
 
     @Volatile
     private var serverEngine: EmbeddedServer<CIOApplicationEngine, CIOApplicationEngine.Configuration>? = null
+
+    private val modelReadyMutex = Mutex()
 
     override fun onCreate() {
         super.onCreate()
@@ -93,9 +97,8 @@ class TranslationService : Service() {
                     ?: ServiceState.activeModel.value
                 val modelSpec = ModelRegistry.getById(requestedModel)
 
-                val currentLoadedPath = OnnxTranslator.getActiveModelPath()
                 val targetDir = File(filesDir, "models/${modelSpec.id}")
-                val isModelChange = currentLoadedPath != null && currentLoadedPath != targetDir.absolutePath
+                val isModelChange = OnnxTranslator.isReady() && !OnnxTranslator.matchesModelDir(targetDir)
 
                 if (isModelChange) {
                     // Cache keys already include the model path, so these entries are unreachable;
@@ -183,31 +186,38 @@ class TranslationService : Service() {
     private suspend fun ensureModelReady(): Boolean = withContext(Dispatchers.IO) {
         val modelId = ServiceState.activeModel.value
         val spec = ModelRegistry.getById(modelId)
-        val dir = File(filesDir, "models/$modelId")
+        val dir = File(filesDir, "models/${spec.id}")
 
-        if (OnnxTranslator.isReady() && OnnxTranslator.getActiveModelPath() == dir.absolutePath) {
+        if (OnnxTranslator.matchesModelDir(dir)) {
             ServiceState.setEngineState(BaseHostState.EngineState.READY)
             return@withContext true
         }
 
-        if (!dir.exists() || !dir.isDirectory) {
-            ServiceState.log("Model chưa tải: ${dir.absolutePath}")
-            ServiceState.setEngineState(BaseHostState.EngineState.NOT_FOUND)
-            return@withContext false
-        }
+        modelReadyMutex.withLock {
+            if (OnnxTranslator.matchesModelDir(dir)) {
+                ServiceState.setEngineState(BaseHostState.EngineState.READY)
+                return@withLock true
+            }
 
-        ServiceState.setEngineState(BaseHostState.EngineState.LOADING)
-        val appliedSaved = PerformanceTuner.applySaved(this@TranslationService, dir)
-        val ok = appliedSaved || OnnxTranslator.init(dir)
-        if (ok) {
-            val tuning = PerformanceTuner.current(this@TranslationService)
-            ServiceState.log("ONNX sẵn sàng: ${tuning.detailText} → ${tuning.speedText}")
-            ServiceState.setEngineState(BaseHostState.EngineState.READY)
-        } else {
-            ServiceState.log("ONNX init THẤT BẠI: ${dir.absolutePath}")
-            ServiceState.setEngineState(BaseHostState.EngineState.ERROR)
+            if (!dir.exists() || !dir.isDirectory) {
+                ServiceState.log("Model chưa tải: ${dir.absolutePath}")
+                ServiceState.setEngineState(BaseHostState.EngineState.NOT_FOUND)
+                return@withLock false
+            }
+
+            ServiceState.setEngineState(BaseHostState.EngineState.LOADING)
+            val appliedSaved = PerformanceTuner.applySaved(this@TranslationService, dir)
+            val ok = appliedSaved || OnnxTranslator.init(dir)
+            if (ok) {
+                val tuning = PerformanceTuner.current(this@TranslationService)
+                ServiceState.log("ONNX sẵn sàng: ${tuning.detailText} → ${tuning.speedText}")
+                ServiceState.setEngineState(BaseHostState.EngineState.READY)
+            } else {
+                ServiceState.log("ONNX init THẤT BẠI: ${dir.absolutePath}")
+                ServiceState.setEngineState(BaseHostState.EngineState.ERROR)
+            }
+            ok
         }
-        ok
     }
 
     // -----------------------------------------------------------------------------------------

@@ -16,7 +16,7 @@ Bạn cần cài đặt ứng dụng VBookMT trên điện thoại hoặc máy t
   3. Gạt nút **Bật dịch offline** (ứng dụng sẽ chạy ngầm và mở cổng dịch nội bộ `8765`).
 
 * **Trên máy tính Windows**:
-  1. Tải và cài đặt `VBookMT-1.2.1.msi` từ mục [Releases](https://github.com/DungxND/VBookMT/releases).
+  1. Tải và cài đặt `VBookMT-1.2.2.msi` từ mục [Releases](https://github.com/DungxND/VBookMT/releases).
   2. Mở app, tải mô hình dịch và nhấn **Bật máy chủ**.
   3. *(Tùy chọn)*: Bật **"Cho phép thiết bị khác kết nối & dò tìm qua LAN"** nếu bạn muốn dùng máy tính để dịch cho vBook trên điện thoại cùng mạng Wi-Fi.
 
@@ -58,10 +58,10 @@ Mỗi mô hình có **hai mức lượng tử hoá**, chọn ngay trong app trư
 
 > **Về ONNX:** đây là engine **duy nhất** — CTranslate2 đã được loại bỏ hoàn toàn khỏi ứng dụng
 > (không còn thư viện native, không còn trong APK, giảm ~48 MB).
-> Trên Android app yêu cầu **Qualcomm QNN** (backend NPU/HTP); máy không đáp ứng sẽ **tự lùi về CPU**
-> và lý do được ghi rõ ở `/health`, không im lặng đổi hành vi. Trên Windows app chạy **CPU**: gói
-> `onnxruntime` tiêu chuẩn không kèm provider GPU (DirectML/WinML cần một cầu nối C++/.NET chưa có
-> trong bản build này).
+> **Lưu ý về backend xử lý (Không dùng QNN):** Ứng dụng **không còn sử dụng Qualcomm QNN (NPU/HTP)**
+> do runtime QNN làm tăng kích thước APK thêm hơn 180 MB nhưng trên thực tế CPU đa luồng cho tốc độ
+> cao hơn, ổn định và mát máy hơn. Hiện tại cả Android và Windows đều chạy trên nền **CPUExecutionProvider**
+> được tối ưu hóa số luồng theo phần cứng từng máy.
 
 
 ---
