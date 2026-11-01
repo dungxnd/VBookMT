@@ -153,23 +153,32 @@ class OrtOnnxModel private constructor(
             // graphs get CPU, because they run one token per step and QNN's partial-offload
             // round-trips dominate there. Built as a plain function so a failed GPU encoder throws
             // here (visible) instead of degrading silently mid-decode.
-            fun sessionsWith(encoderOpts: OrtSession.SessionOptions, decoderOpts: OrtSession.SessionOptions) = mapOf(
-                Graphs.ENCODER to env.createSession(modelDir.resolve("encoder_model.onnx").toString(), encoderOpts),
-                Graphs.DECODER to env.createSession(modelDir.resolve("decoder_model.onnx").toString(), decoderOpts),
-                Graphs.DECODER_WITH_PAST to
-                    env.createSession(modelDir.resolve("decoder_with_past_model.onnx").toString(), decoderOpts),
-            )
-
-            val sessions = if (choice.requested == OnnxProvider.HYBRID) {
-                OrtSession.SessionOptions().use { decOpts ->
-                    decOpts.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-                    if (threads > 0) decOpts.setIntraOpNumThreads(threads)
-                    sessionsWith(opts, decOpts)
+            fun createSafeSessions(encoderOpts: OrtSession.SessionOptions, decoderOpts: OrtSession.SessionOptions): Map<String, OrtSession> {
+                val opened = LinkedHashMap<String, OrtSession>()
+                try {
+                    opened[Graphs.ENCODER] = env.createSession(modelDir.resolve("encoder_model.onnx").toString(), encoderOpts)
+                    opened[Graphs.DECODER] = env.createSession(modelDir.resolve("decoder_model.onnx").toString(), decoderOpts)
+                    opened[Graphs.DECODER_WITH_PAST] =
+                        env.createSession(modelDir.resolve("decoder_with_past_model.onnx").toString(), decoderOpts)
+                    return opened
+                } catch (t: Throwable) {
+                    opened.values.forEach { runCatching { it.close() } }
+                    throw t
                 }
-            } else {
-                // One options object reused for all three, which is what ONNX Runtime expects when the
-                // provider set is identical.
-                sessionsWith(opts, opts)
+            }
+
+            val sessions = try {
+                if (choice.requested == OnnxProvider.HYBRID) {
+                    OrtSession.SessionOptions().use { decOpts ->
+                        decOpts.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                        if (threads > 0) decOpts.setIntraOpNumThreads(threads)
+                        createSafeSessions(opts, decOpts)
+                    }
+                } else {
+                    createSafeSessions(opts, opts)
+                }
+            } finally {
+                opts.close()
             }
             val backend = OrtOnnxBackend(env, sessions)
 

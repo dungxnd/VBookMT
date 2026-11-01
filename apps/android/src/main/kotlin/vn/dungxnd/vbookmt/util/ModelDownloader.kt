@@ -6,6 +6,15 @@ import com.vbookmt.core.download.ModelDownloader as CoreDownloader
 import com.vbookmt.core.model.ModelRegistry
 import com.vbookmt.core.model.ModelSpec
 import com.vbookmt.core.model.QuantVariant
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 object ModelDownloader {
@@ -14,16 +23,40 @@ object ModelDownloader {
 
     typealias DownloadProgress = CoreDownloader.DownloadProgress
 
-    fun installedVariant(context: Context, modelSpec: ModelSpec): QuantVariant =
-        context.getSharedPreferences("vbookmt_models", Context.MODE_PRIVATE)
+    data class DownloadState(
+        val modelId: String,
+        val variant: QuantVariant,
+        val percent: Int = 0,
+        val currentFile: String = "",
+        val isDownloading: Boolean = true
+    )
+
+    private val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val _downloadState = MutableStateFlow<DownloadState?>(null)
+    val downloadState: StateFlow<DownloadState?> = _downloadState.asStateFlow()
+
+    private var activeJob: Job? = null
+
+    fun installedVariant(context: Context, modelSpec: ModelSpec): QuantVariant {
+        val modelDir = File(context.filesDir, "models/${modelSpec.id}")
+        val diskVariant = File(modelDir, ".variant").takeIf { it.exists() }?.readText()?.trim()
+            ?.let { QuantVariant.parse(it) }
+        if (diskVariant != null) return diskVariant
+
+        return context.getSharedPreferences("vbookmt_models", Context.MODE_PRIVATE)
             .getString("variant_${modelSpec.id}", null)
             ?.let { QuantVariant.parse(it) }
             ?: QuantVariant.DEFAULT
+    }
 
     fun setInstalledVariant(context: Context, modelSpec: ModelSpec, variant: QuantVariant) {
+        val modelDir = File(context.filesDir, "models/${modelSpec.id}")
+        if (modelDir.exists()) {
+            runCatching { File(modelDir, ".variant").writeText(variant.folder) }
+        }
         context.getSharedPreferences("vbookmt_models", Context.MODE_PRIVATE)
             .edit()
-            .putString("variant_${modelSpec.id}", variant.name)
+            .putString("variant_${modelSpec.id}", variant.folder)
             .apply()
     }
 
@@ -43,11 +76,49 @@ object ModelDownloader {
         )
     }
 
+    fun startDownload(
+        context: Context,
+        modelSpec: ModelSpec,
+        variant: QuantVariant? = null,
+        onComplete: ((Boolean) -> Unit)? = null
+    ) {
+        if (_downloadState.value?.isDownloading == true) return
+        val targetVariant = variant ?: QuantVariant.DEFAULT
+
+        _downloadState.value = DownloadState(
+            modelId = modelSpec.id,
+            variant = targetVariant,
+            percent = 0,
+            isDownloading = true
+        )
+
+        activeJob = downloadScope.launch {
+            val ok = downloadModel(
+                context = context,
+                modelSpec = modelSpec,
+                variant = targetVariant,
+                onProgress = { p ->
+                    _downloadState.value = DownloadState(
+                        modelId = modelSpec.id,
+                        variant = targetVariant,
+                        percent = p.percent,
+                        currentFile = p.currentFile,
+                        isDownloading = true
+                    )
+                }
+            )
+            _downloadState.value = null
+            withContext(Dispatchers.Main) {
+                onComplete?.invoke(ok)
+            }
+        }
+    }
+
     suspend fun downloadModel(
         context: Context,
         modelSpec: ModelSpec,
         variant: QuantVariant? = null,
-        onProgress: (DownloadProgress) -> Unit
+        onProgress: (DownloadProgress) -> Unit = {}
     ): Boolean {
         val targetDir = File(context.filesDir, "models/${modelSpec.id}")
         val targetVariant = variant ?: QuantVariant.DEFAULT
@@ -56,7 +127,7 @@ object ModelDownloader {
             modelSpec = modelSpec,
             variant = targetVariant,
             currentInstalledVariant = installedVariant(context, modelSpec),
-            userAgent = "VBookMT-Android/1.2.0",
+            userAgent = "VBookMT-Android/1.2.1",
             log = { Log.i(TAG, it) },
             onProgress = onProgress
         )

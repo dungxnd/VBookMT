@@ -91,6 +91,9 @@ object PerformanceTuner {
         val tuning = loadSaved(context) ?: return false
         OnnxTranslator.setBatchSize(tuning.maxBatch)
         OnnxTranslator.setThreads(tuning.threads)
+        if (tuning.computeType.isNotBlank()) {
+            OnnxTranslator.setProviderOverride(tuning.computeType)
+        }
         return OnnxTranslator.init(modelDir)
     }
 
@@ -152,7 +155,7 @@ object PerformanceTuner {
     private fun candidateThreads(): List<Int> {
         val cores = Runtime.getRuntime().availableProcessors()
         val big = bigCoreCount()
-        return listOf(big, (big + 2), (big - 1))
+        return listOf(big, (big + 2), (big - 1), 4)
             .map { it.coerceIn(1, cores.coerceAtMost(8)) }
             .distinct()
     }

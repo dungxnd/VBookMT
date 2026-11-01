@@ -54,6 +54,9 @@ object ChapterChunker {
     /** Sentence terminators. '；'/';' are clause separators in Chinese, not sentence ends. */
     private val SENTENCE_ENDERS = charArrayOf('。', '！', '？', '!', '?', '…')
 
+    /** Closing punctuation/quotes that should not be detached from a preceding sentence terminator. */
+    private val CLOSING_PUNCTUATION = charArrayOf('”', '’', '」', '』', '"', '\'', '）', ')')
+
     /** Last-resort cut points inside an over-long run-on sentence. */
     private val CLAUSE_BOUNDARIES = charArrayOf(
         '。', '！', '？', '!', '?', '…', '，', '、', '：', '；', ',', ':', ';'
@@ -165,10 +168,18 @@ object ChapterChunker {
         val buffer = StringBuilder(budget + 32)
         val hardLimit = (budget * HARD_LIMIT_FACTOR).toInt().coerceAtLeast(budget)
 
-        for (ch in text) {
+        var i = 0
+        val len = text.length
+        while (i < len) {
+            val ch = text[i]
             buffer.append(ch)
             when {
                 ch in SENTENCE_ENDERS && buffer.length >= MIN_SOFT_SPLIT_CHARS -> {
+                    // Keep closing quotes/brackets attached to the terminator they close
+                    while (i + 1 < len && text[i + 1] in CLOSING_PUNCTUATION) {
+                        i++
+                        buffer.append(text[i])
+                    }
                     result.add(buffer.toString())
                     buffer.clear()
                 }
@@ -185,6 +196,7 @@ object ChapterChunker {
                     }
                 }
             }
+            i++
         }
         if (buffer.isNotEmpty()) result.add(buffer.toString())
         return result

@@ -183,7 +183,7 @@ fun SettingsScreen() {
                 DetailRow("Luồng CPU", "${WindowsTranslator.activeThreads}")
                 DetailRow("Số câu mỗi lượt", "${WindowsTranslator.maxBatchSize}")
                 // ONNX has no runtime precision knob: the model's precision is whichever variant was
-                // downloaded (FP16 / Q16 / Q8), so naming a "compute type" here would be a fiction.
+                // downloaded (FP16 / Q8), so naming a "compute type" here would be a fiction.
                 DetailRow("Kiểu tính toán", "ONNX Runtime (CPU)")
                 DetailRow("Độ dài mỗi đoạn", "${WindowsTranslator.chunkChars} ký tự")
                 VSpace(VBookTheme.spacing.sm)

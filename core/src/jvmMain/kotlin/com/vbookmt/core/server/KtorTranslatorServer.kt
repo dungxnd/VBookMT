@@ -55,13 +55,14 @@ object KtorTranslatorServer {
             exposeHeader("grpc-status")
             exposeHeader("grpc-message")
             exposeHeader("content-type")
+            exposeHeader("Access-Control-Allow-Origin")
         }
 
         routing {
             get("/") {
                 call.respondText(
-                    "$serviceTitle (gRPC-Web on $GRPC_PATH)\n",
-                    ContentType.Text.Plain
+                    """{"service":"vbookmt","title":"$serviceTitle","grpc":"$GRPC_PATH"}""" + "\n",
+                    ContentType.Application.Json
                 )
             }
 
@@ -69,12 +70,15 @@ object KtorTranslatorServer {
                 call.response.header("Access-Control-Allow-Origin", "*")
                 call.response.header("Access-Control-Allow-Methods", "POST, OPTIONS")
                 call.response.header("Access-Control-Allow-Headers", "content-type, x-grpc-web, x-user-agent")
+                call.response.header("Access-Control-Expose-Headers", "grpc-status, grpc-message, content-type")
                 call.response.header("Access-Control-Max-Age", "86400")
                 call.respondText("", ContentType.Text.Plain, HttpStatusCode.OK)
             }
 
             post("$GRPC_PATH/{method}") {
                 val method = call.parameters["method"].orEmpty()
+                call.response.header("Access-Control-Allow-Origin", "*")
+                call.response.header("Access-Control-Expose-Headers", "grpc-status, grpc-message, content-type")
                 val body = call.receiveText()
                 val reply = GrpcWebDispatcher.dispatch(service, method, body)
                 if (reply == null) {

@@ -91,4 +91,37 @@ class ChapterTranslationPipelineTest {
         assertTrue(result.fallbackCount > 0)
         assertTrue(result.translatedText.isNotBlank())
     }
+
+    @Test
+    fun testFallbackDoesNotDoubleCountEarlierBatchSuccesses() = runTest {
+        var callCount = 0
+        val engine = object : ChapterTranslationPipeline.EngineDelegate {
+            override fun isReady(): Boolean = true
+            override fun getActiveModelPath(): String = "/models/mock"
+            override val maxBatchSize: Int = 1 // 1 chunk per batch to force multiple batches
+            override fun tokenCount(text: String): Int = text.length
+            override suspend fun rawTranslateBatch(texts: List<String>, numBeams: Int): List<String>? {
+                callCount++
+                return if (callCount == 1) {
+                    texts.map { "Batch1: $it" } // Batch 1 succeeds
+                } else {
+                    null // Batch 2 fails
+                }
+            }
+        }
+        val cache = MockCache()
+        // 2 distinct paragraphs with Han characters to produce 2 misses
+        val input = "第一章 初始。\n\n第二章 历练。"
+        val result = ChapterTranslationPipeline.translate(
+            rawText = input,
+            chunkChars = 100,
+            tokenBudget = 280,
+            engine = engine,
+            cache = cache
+        )
+        // Out of 2 chunks, only 1 failed (batch 2). Batch 1 succeeded.
+        assertEquals(2, result.chunkCount)
+        assertEquals(1, result.fallbackCount)
+        assertTrue(result.translatedText.contains("Batch1:"))
+    }
 }

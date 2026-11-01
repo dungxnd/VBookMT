@@ -114,6 +114,7 @@ object ChunkResolver {
     ): List<List<Miss>> {
         if (misses.isEmpty()) return emptyList()
         val size = batchSize.coerceAtLeast(1)
-        return misses.sortedBy { tokenCount(it.text) }.chunked(size)
+        val tokenCounts = misses.associateWith { tokenCount(it.text) }
+        return misses.sortedBy { tokenCounts[it] ?: 0 }.chunked(size)
     }
 }

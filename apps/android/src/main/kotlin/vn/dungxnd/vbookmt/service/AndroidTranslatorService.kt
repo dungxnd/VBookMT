@@ -38,7 +38,7 @@ internal class AndroidTranslatorService(
     override fun diskCacheBytes(): Long = CacheStore.diskBytes()
     override fun restoredCacheEntries(): Int = CacheStore.restoredEntries()
     override fun requestCount(): Int = ServiceState.requestCount.value
-    override fun inFlightCount(): Int = inFlight.get()
+    override fun inFlightCount(): Int = ServiceState.inFlightCount.value
 
     override fun pssMb(): Int = Diagnostics.processPssMb()
     override fun jvmHeapMb(): Int = Diagnostics.jvmHeapMb().toInt()
@@ -53,7 +53,7 @@ internal class AndroidTranslatorService(
     }
 
     override fun onInFlightChanged(delta: Int) {
-        inFlight.addAndGet(delta)
+        ServiceState.changeInFlight(delta)
     }
 
     override fun onRecordLatency(latencyMs: Long) {

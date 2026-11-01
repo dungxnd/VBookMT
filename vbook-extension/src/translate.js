@@ -15,18 +15,22 @@
  *  - Safe fallback to the built-in QuickTranslator when the host is off, so reading never stops.
  */
 
-// Load wire codec if not already present in environment
+// Pull in the wire codec, which ships beside this file as `src/wire.js`.
+//
+// Per vBook's extension-api.md this call is resolved *before* the script runs: the line is
+// replaced by the file's contents. It is a text substitution, NOT a callable global — so the
+// `typeof load === "function"` guard that used to wrap it was false on every device, VBookWire
+// stayed undefined, and every chapter took the "codec missing" branch below and silently fell
+// back to QuickTranslator while reporting that the host was off. The argument must be a string
+// literal and the file must sit at the top level of `src/`; a path like `src/wire.js` is not a
+// top-level name and would be dropped without a word.
+//
+// The `if`/`try` are only here for runtimes that provide load() as a real function (the test
+// harness) or provide neither mechanism: the latter becomes the explicit codec error below
+// instead of an uncaught ReferenceError.
 if (typeof VBookWire === "undefined") {
     try {
-        if (typeof load === "function") {
-            try {
-                load("wire.js");
-            } catch (e1) {
-                try {
-                    load("src/wire.js");
-                } catch (e2) {}
-            }
-        }
+        load('wire.js');
     } catch (e) {}
 }
 
@@ -57,9 +61,14 @@ function verifyVBookServer(baseUrl, timeoutMs) {
             timeout: timeoutMs || 300
         });
         if (res && res.status === 200) {
-            var body = typeof res.text === "function" ? res.text() : "";
-            if (body && (body.indexOf('"service":"vbookmt"') !== -1 || body.indexOf('"service": "vbookmt"') !== -1)) {
-                return true;
+            var body = typeof res.text === "function" ? res.text() : (typeof res.text === "string" ? res.text : (typeof res.body === "string" ? res.body : ""));
+            if (body) {
+                var lower = body.toLowerCase();
+                if (lower.indexOf('"service":"vbookmt"') !== -1 ||
+                    lower.indexOf('"service": "vbookmt"') !== -1 ||
+                    lower.indexOf("vbookmt") !== -1) {
+                    return true;
+                }
             }
         }
     } catch (e) {}
@@ -127,7 +136,17 @@ function normalizeServerUrl(rawUrl) {
     if (!url.match(/^https?:\/\//i)) {
         url = "http://" + url;
     }
-    return url.replace(/\/+$/, "");
+    url = url.replace(/\/+$/, "");
+    // Default to port 8765 if no port was specified
+    var parsed = url.match(/^(https?:\/\/)([^/:]+)(?::(\d+))?(\/.*)?$/i);
+    if (parsed) {
+        var scheme = parsed[1];
+        var host = parsed[2];
+        var port = parsed[3] ? parsed[3] : "8765";
+        var path = (parsed[4] || "").replace(/\/+$/, "");
+        url = scheme + host + ":" + port + path;
+    }
+    return url;
 }
 
 function safeFallbackQt(text, notify) {
@@ -299,10 +318,17 @@ function execute(text, from, to, source, _model, style) {
             var rawGrpcStatus = getHeader(response, "grpc-status");
             var grpcStatusCode = rawGrpcStatus !== null ? parseInt(rawGrpcStatus, 10) : 0;
             var rawGrpcMessage = getHeader(response, "grpc-message");
-            var grpcMessage = rawGrpcMessage ? decodeURIComponent(rawGrpcMessage) : "";
+            var grpcMessage = "";
+            if (rawGrpcMessage) {
+                try {
+                    grpcMessage = decodeURIComponent(rawGrpcMessage);
+                } catch (eUri) {
+                    grpcMessage = rawGrpcMessage;
+                }
+            }
 
             if (grpcStatusCode === 0) {
-                var bodyText = response.text();
+                var bodyText = typeof response.text === "function" ? response.text() : (typeof response.text === "string" ? response.text : (typeof response.body === "string" ? response.body : ""));
                 if (!bodyText || !bodyText.trim()) {
                     throw new Error("Server gRPC-Web trả về body rỗng");
                 }
@@ -325,8 +351,8 @@ function execute(text, from, to, source, _model, style) {
             if (grpcStatusCode === 14) {
                 // UNAVAILABLE: model still loading. Retrying is worth it; falling back is not yet.
                 lastError = grpcMessage || "Mô hình chưa nạp xong";
-                if (attempt < maxAttempts) {
-                    if (typeof sleep === "function") sleep(2000);
+                if (attempt < 3) {
+                    if (typeof sleep === "function") sleep(1500);
                     continue;
                 }
                 break;
@@ -357,6 +383,12 @@ function execute(text, from, to, source, _model, style) {
                 sleep(300);
             }
         }
+    }
+
+    // Invalidate cached LAN URL on failure so dead host is re-discovered next time
+    if (connMode === "auto_discover") {
+        sessionDiscoveredUrl = null;
+        saveConfigValue("discovered_server_url", "");
     }
 
     // -------------------------------------------------------------------------

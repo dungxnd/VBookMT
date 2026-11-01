@@ -23,7 +23,7 @@ internal class TranslationHttpServer(
         return KtorTranslatorServer.create(
             port = port,
             host = ServiceContract.HOST,
-            serviceTitle = "VBookMT Android 1.2.0",
+            serviceTitle = "VBookMT Android 1.2.1",
             service = service
         )
     }

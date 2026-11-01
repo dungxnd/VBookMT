@@ -88,10 +88,13 @@ object WindowsState : BaseHostState(ModelRegistry.HACHIMI_60_QT.id, 200) {
         saveSettings()
     }
 
+    val cacheLock = Any()
     val cache = TranslationCache()
 
     fun forgetCacheEntries(keys: Iterable<String>) {
-        for (key in keys) cache.remove(key)
+        synchronized(cacheLock) {
+            for (key in keys) cache.remove(key)
+        }
     }
 
     val modelsDir: File by lazy {
@@ -124,10 +127,20 @@ object WindowsState : BaseHostState(ModelRegistry.HACHIMI_60_QT.id, 200) {
         map
     }
 
-    fun installedVariant(modelId: String): QuantVariant =
-        variantCache[modelId]?.let { QuantVariant.parse(it) } ?: QuantVariant.DEFAULT
+    fun installedVariant(modelId: String): QuantVariant {
+        val modelDir = File(modelsDir, modelId)
+        val diskVariant = File(modelDir, ".variant").takeIf { it.exists() }?.readText()?.trim()
+            ?.let { QuantVariant.parse(it) }
+        if (diskVariant != null) return diskVariant
+
+        return variantCache[modelId]?.let { QuantVariant.parse(it) } ?: QuantVariant.DEFAULT
+    }
 
     fun setInstalledVariant(modelId: String, variant: QuantVariant) {
+        val modelDir = File(modelsDir, modelId)
+        if (modelDir.exists()) {
+            runCatching { File(modelDir, ".variant").writeText(variant.folder) }
+        }
         variantCache[modelId] = variant.folder
         runCatching {
             modelsDir.mkdirs()

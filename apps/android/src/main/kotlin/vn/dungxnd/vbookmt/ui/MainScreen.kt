@@ -77,8 +77,11 @@ fun MainScreen(
     val coroutineScope = rememberCoroutineScope()
 
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.Home) }
-    var isRunning by remember { mutableStateOf(false) }
-    var selectedModel by remember { mutableStateOf(ModelRegistry.DEFAULT_MODEL) }
+
+    val isRunning by ServiceState.isRunning.collectAsState()
+    val engineState by ServiceState.engineState.collectAsState()
+    val activeModelId by ServiceState.activeModel.collectAsState()
+    val selectedModel = remember(activeModelId) { ModelRegistry.getById(activeModelId) }
 
     var showNoticesSheet by remember { mutableStateOf(false) }
 
@@ -114,7 +117,6 @@ fun MainScreen(
         // Auto-open server on app open if user enabled it
         if (isAutoStartOnOpen && !isRunning) {
             onStartService(selectedModel.id)
-            isRunning = true
         }
 
         // Pre-load the ONNX engine in the background for instant quick testing, honouring any
@@ -145,20 +147,21 @@ fun MainScreen(
 
     /** Pushes a model switch to the service, which is the only place that owns the loaded engine. */
     fun switchModel(spec: com.vbookmt.core.model.ModelSpec) {
-        selectedModel = spec
         ServiceState.setActiveModel(spec.id)
-        val intent = android.content.Intent(context, TranslationService::class.java).apply {
-            action = ServiceContract.ACTION_START
-            putExtra(ServiceContract.EXTRA_ACTIVE_MODEL, spec.id)
-        }
-        runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+        if (isRunning) {
+            val intent = android.content.Intent(context, TranslationService::class.java).apply {
+                action = ServiceContract.ACTION_START
+                putExtra(ServiceContract.EXTRA_ACTIVE_MODEL, spec.id)
             }
-        }.onFailure {
-            Toast.makeText(context, "Không đổi được model: ${it.message}", Toast.LENGTH_SHORT).show()
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            }.onFailure {
+                Toast.makeText(context, "Không đổi được model: ${it.message}", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -228,19 +231,18 @@ fun MainScreen(
                     item {
                         StatusHeroCard(
                             isRunning = isRunning,
-                            port = 8765,
+                            port = ServiceContract.PORT,
+                            engineState = engineState,
                             onToggle = {
                                 if (isRunning) {
                                     onStopService()
-                                    isRunning = false
                                 } else {
                                     onStartService(selectedModel.id)
-                                    isRunning = true
                                 }
                             },
                             onCopyUrl = {
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("VBookMT URL", "http://127.0.0.1:8765/translate"))
+                                clipboard.setPrimaryClip(ClipData.newPlainText("VBookMT URL", "http://127.0.0.1:${ServiceContract.PORT}/translate"))
                                 Toast.makeText(context, "Đã sao chép địa chỉ server!", Toast.LENGTH_SHORT).show()
                             }
                         )
@@ -319,7 +321,7 @@ fun MainScreen(
                                         context,
                                         when (result) {
                                             is PerformanceTuner.TuneResult.Success ->
-                                                "Đã tối ưu: ${result.tuning.speedText}"
+                                                 "Đã tối ưu: ${result.tuning.speedText}"
                                             is PerformanceTuner.TuneResult.Failure -> result.reason
                                         },
                                         Toast.LENGTH_LONG

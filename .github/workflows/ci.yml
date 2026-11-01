@@ -67,7 +67,15 @@ jobs:
           distribution: "temurin"
           java-version: "21"
 
+      - name: Cache native DLL
+        id: cache-native-dll
+        uses: actions/cache@v4
+        with:
+          path: apps/windows/resources-packaged/windows/vbookmt_native.dll
+          key: win-native-dll-${{ hashFiles('native/**', 'scripts/build_windows_native.ps1') }}
+
       - name: Cache native dependencies
+        if: steps.cache-native-dll.outputs.cache-hit != 'true'
         id: cache-deps
         uses: actions/cache@v4
         with:
@@ -75,14 +83,17 @@ jobs:
             build/native-win/sentencepiece
             build/native-win/build-spm
           key: win-deps-${{ hashFiles('scripts/build_windows_native.ps1') }}
+          restore-keys: |
+            win-deps-
 
       - name: Build vbookmt_native.dll
+        if: steps.cache-native-dll.outputs.cache-hit != 'true'
         run: |
-          $buildArgs = @()
-          if ('${{ steps.cache-deps.outputs.cache-hit }}' -eq 'true') {
-              $buildArgs += '-SkipDeps'
+          if ((Test-Path "build/native-win/build-spm") -or ('${{ steps.cache-deps.outputs.cache-hit }}' -eq 'true')) {
+              ./scripts/build_windows_native.ps1 -SkipDeps
+          } else {
+              ./scripts/build_windows_native.ps1
           }
-          ./scripts/build_windows_native.ps1 @buildArgs
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4

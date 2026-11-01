@@ -100,6 +100,25 @@ class ModelRegistryTest {
     }
 
     @Test
+    fun quantVariantOnlyContainsFp16AndQ8() {
+        assertEquals(listOf(QuantVariant.FP16, QuantVariant.Q8), QuantVariant.entries.toList())
+    }
+
+    @Test
+    fun quantVariantParsesValidAndLegacyValues() {
+        assertEquals(QuantVariant.FP16, QuantVariant.parse("fp16"))
+        assertEquals(QuantVariant.FP16, QuantVariant.parse("FP16"))
+        assertEquals(QuantVariant.Q8, QuantVariant.parse("q8"))
+        assertEquals(QuantVariant.Q8, QuantVariant.parse("Q8"))
+
+        // Legacy or retired variants like "q16" gracefully fallback to DEFAULT (FP16)
+        assertEquals(QuantVariant.DEFAULT, QuantVariant.parse("q16"))
+        assertEquals(QuantVariant.DEFAULT, QuantVariant.parse("Q16"))
+        assertEquals(QuantVariant.DEFAULT, QuantVariant.parse("unknown"))
+        assertEquals(QuantVariant.DEFAULT, QuantVariant.parse(""))
+    }
+
+    @Test
     fun modelIdsStayDistinct() {
         val ids = ModelRegistry.ALL_MODELS.map { it.id }
         assertEquals(ids.size, ids.toSet().size, "duplicate model id: $ids")

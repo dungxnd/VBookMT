@@ -50,6 +50,15 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+# Defensive handling for cases where flags are passed positionally
+if ($WorkDir -eq "-SkipDeps") {
+    $WorkDir = ""
+    $SkipDeps = [switch]::Present
+} elseif ($WorkDir -eq "-Clean") {
+    $WorkDir = ""
+    $Clean = [switch]::Present
+}
+
 # Keep these in lockstep with build_android_native.sh. A mismatch between the two hosts would let
 # them disagree about the tokenizer contract, which is the one thing sharing native/ is meant to
 # prevent.

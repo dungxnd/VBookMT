@@ -8,24 +8,28 @@ object TextProcessor {
     private val OPENER_SPACE_REGEX = Regex("([“‘«「『【《(\\[{（［｛]) (?=[^\\W\\d_])")
     private val NL_MARKER_REGEX = Regex("[^\\S\\n]*<NL>[^\\S\\n]*")
     private val MULTI_NEWLINE_REGEX = Regex("[^\\S\\n]*\\n[^\\S\\n]*")
-    private val TRAILING_COMMENT_NUMS = Regex("(\\D)\\s*\\d+$")
-    private val ZERO_WIDTH_CHARS = Regex("[\\u200B\\u200C\\u200D\\uFEFF\\u00A0]")
+    // Strips trailing crawler comment numbers like (12), [12], ( 100 ), or digits right after terminal punctuation
+    private val TRAILING_COMMENT_NUMS = Regex(
+        "(?<=[。？！…」』”’\\.\\?!])\\s*(?:\\(\\s*\\d+\\s*\\)|\\[\\s*\\d+\\s*\\]|\\d+)\\s*$|\\s*[\\[\\(]\\s*\\d+\\s*[\\]\\)]\\s*$"
+    )
+    private val ZERO_WIDTH_CHARS = Regex("[\\u200B\\u200C\\u200D\\uFEFF]")
 
     /**
      * Sanitizes input novel text:
      * - Normalizes Windows/Mac line endings (\r\n, \r -> \n).
+     * - Normalizes non-breaking spaces (\u00A0 -> regular space).
      * - Strips invisible zero-width unicode characters.
      * - Strips trailing comment count numbers injected by web crawlers.
      */
     fun sanitize(text: String, stripCrawlerNumbers: Boolean = true): String {
-        var clean = text.replace("\r\n", "\n").replace("\r", "\n")
+        var clean = text.replace("\r\n", "\n").replace("\r", "\n").replace('\u00A0', ' ')
         clean = ZERO_WIDTH_CHARS.replace(clean, "")
 
         if (stripCrawlerNumbers) {
             val lines = clean.split("\n")
             clean = lines.joinToString("\n") { line ->
                 val trimmed = line.trim()
-                if (trimmed.isEmpty()) "" else TRAILING_COMMENT_NUMS.replace(trimmed, "$1")
+                if (trimmed.isEmpty()) "" else TRAILING_COMMENT_NUMS.replace(trimmed, "")
             }
         }
         return clean

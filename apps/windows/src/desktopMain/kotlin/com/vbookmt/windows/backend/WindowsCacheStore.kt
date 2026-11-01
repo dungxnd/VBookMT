@@ -33,7 +33,11 @@ object WindowsCacheStore {
         val file = File(dir, FILE_NAME)
         delegate.attach(
             file = file,
-            onRestored = { WindowsState.cache.restore(it) },
+            onRestored = { entries ->
+                synchronized(WindowsState.cacheLock) {
+                    WindowsState.cache.restore(entries)
+                }
+            },
             onLog = { WindowsState.log(it) }
         )
     }
@@ -41,14 +45,22 @@ object WindowsCacheStore {
     fun append(entries: List<Pair<String, String>>) {
         delegate.append(
             entries = entries,
-            snapshotProvider = { WindowsState.cache.snapshot() },
+            snapshotProvider = {
+                synchronized(WindowsState.cacheLock) {
+                    WindowsState.cache.snapshot()
+                }
+            },
             onLog = { WindowsState.log(it) }
         )
     }
 
     fun compact() {
         delegate.compact(
-            snapshotProvider = { WindowsState.cache.snapshot() },
+            snapshotProvider = {
+                synchronized(WindowsState.cacheLock) {
+                    WindowsState.cache.snapshot()
+                }
+            },
             onLog = { WindowsState.log(it) }
         )
     }
@@ -60,7 +72,11 @@ object WindowsCacheStore {
     fun forget(keys: Collection<String>) {
         delegate.forget(
             keys = keys,
-            snapshotProvider = { WindowsState.cache.snapshot() },
+            snapshotProvider = {
+                synchronized(WindowsState.cacheLock) {
+                    WindowsState.cache.snapshot()
+                }
+            },
             onLog = { WindowsState.log(it) }
         )
     }

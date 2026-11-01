@@ -25,7 +25,7 @@ import kotlinx.coroutines.withTimeout
 abstract class BaseTranslatorRpcService(
     val hostName: String,
     val port: Int,
-    val maxTranslateTimeoutMs: Long = 180_000L,
+    val maxTranslateTimeoutMs: Long = 110_000L,
 ) : TranslatorService {
 
     abstract val activeModelId: String

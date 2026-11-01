@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vbookmt.core.state.BaseHostState
 
 // ============================================================================
 // Modern Hero Status Card with Pulsing Indicator
@@ -50,6 +51,7 @@ import androidx.compose.ui.unit.sp
 fun StatusHeroCard(
     isRunning: Boolean,
     port: Int,
+    engineState: BaseHostState.EngineState = BaseHostState.EngineState.READY,
     onToggle: () -> Unit,
     onCopyUrl: () -> Unit
 ) {
@@ -70,6 +72,14 @@ fun StatusHeroCard(
         label = "cardBg"
     )
 
+    val (statusText, statusColor, dotColor) = when {
+        !isRunning -> Triple("MÁY CHỦ ĐANG NGHỈ", Color(0xFF424242), Color(0xFF757575))
+        engineState == BaseHostState.EngineState.LOADING -> Triple("ĐANG NẠP MÔ HÌNH...", Color(0xFFE65100), Color(0xFFF57C00))
+        engineState == BaseHostState.EngineState.NOT_FOUND -> Triple("CHƯA TẢI MÔ HÌNH", Color(0xFFC62828), Color(0xFFD32F2F))
+        engineState == BaseHostState.EngineState.ERROR -> Triple("LỖI NẠP MÔ HÌNH", Color(0xFFC62828), Color(0xFFD32F2F))
+        else -> Triple("MÁY CHỦ SẴN SÀNG", Color(0xFF1B5E20), Color(0xFF2E7D32))
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -88,16 +98,16 @@ fun StatusHeroCard(
                             .size(12.dp)
                             .clip(CircleShape)
                             .background(
-                                if (isRunning) Color(0xFF2E7D32).copy(alpha = pulseAlpha)
-                                else Color(0xFF757575)
+                                if (isRunning) dotColor.copy(alpha = pulseAlpha)
+                                else dotColor
                             )
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (isRunning) "MÁY CHỦ SẴN SÀNG" else "MÁY CHỦ ĐANG NGHỈ",
+                        text = statusText,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (isRunning) Color(0xFF1B5E20) else Color(0xFF424242)
+                        color = statusColor
                     )
                 }
 

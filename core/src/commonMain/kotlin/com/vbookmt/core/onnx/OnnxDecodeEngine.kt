@@ -61,7 +61,8 @@ class OnnxDecodeEngine(private val model: OnnxModel) {
         // Pad to a common width. The encoder ignores masked positions, so a short sentence translates
         // the same alone or beside a long one — verified against the fp32 model.
         val encoded = texts.map { model.encode(it) }
-        val width = encoded.maxOf { it.size }
+        val width = encoded.maxOfOrNull { it.size } ?: 0
+        if (width == 0) return texts.map { "" }
         val ids = LongArray(n * width)
         val mask = LongArray(n * width)
         encoded.forEachIndexed { row, seq ->
@@ -72,8 +73,11 @@ class OnnxDecodeEngine(private val model: OnnxModel) {
         }
         val seqShape = longArrayOf(n.toLong(), width.toLong())
 
+        var encoderInputIds: TensorHandle? = null
         var encoderMask: TensorHandle? = null
         var encoderHidden: TensorHandle? = null
+        var firstDecoderInputIds: TensorHandle? = null
+        var currentStepIds: TensorHandle? = null
         var logits: TensorHandle? = null
         var cache: List<TensorHandle> = emptyList()
 
@@ -94,40 +98,53 @@ class OnnxDecodeEngine(private val model: OnnxModel) {
         }
 
         try {
+            encoderInputIds = model.backend.longs(ids, seqShape)
             encoderMask = model.backend.longs(mask, seqShape)
             val encoderOut = model.backend.run(
                 Graphs.ENCODER,
                 mapOf(
-                    "input_ids" to model.backend.longs(ids, seqShape),
+                    "input_ids" to encoderInputIds,
                     "attention_mask" to encoderMask,
                 )
             )
+            model.backend.release(encoderInputIds)
+            encoderInputIds = null
             encoderHidden = encoderOut.first()
 
             // --- step 1: no cache in -------------------------------------------------------------
+            val decInputIds = model.backend.longs(
+                LongArray(n) { startId },
+                longArrayOf(n.toLong(), 1L),
+            )
+            firstDecoderInputIds = decInputIds
             val firstOut = model.backend.run(
                 Graphs.DECODER,
                 mapOf(
-                    "decoder_input_ids" to model.backend.longs(
-                        LongArray(n) { startId },
-                        longArrayOf(n.toLong(), 1L),
-                    ),
+                    "decoder_input_ids" to decInputIds,
                     "encoder_hidden_states" to encoderHidden,
                     "encoder_attention_mask" to encoderMask,
                 )
             )
+            model.backend.release(decInputIds)
+            firstDecoderInputIds = null
             logits = firstOut.first()
             cache = firstOut.drop(1)
             appendTokens(rows, live, logits)
 
+            // Dynamic ceiling: protect against runaway token generation on short sentences
+            // while giving ample headroom for Vietnamese expansion (~1.5x source tokens).
+            val dynamicCap = width * 2 + 32
+            val effectiveMaxSteps = if (maxSteps <= dynamicCap) maxSteps else maxOf(48, dynamicCap)
+
             // --- steps 2..n: cache in, cache out -------------------------------------------------
-            for (step in 1 until maxSteps) {
+            for (step in 1 until effectiveMaxSteps) {
                 if (live.all { rows[it].last() == eosId }) break
 
                 val stepIds = model.backend.longs(
                     LongArray(live.size) { rows[live[it]].last() },
                     longArrayOf(live.size.toLong(), 1L),
                 )
+                currentStepIds = stepIds
                 val feeds = LinkedHashMap<String, TensorHandle>()
                 feeds["decoder_input_ids"] = stepIds
                 feeds["encoder_attention_mask"] = liveMask ?: encoderMask
@@ -138,6 +155,7 @@ class OnnxDecodeEngine(private val model: OnnxModel) {
                 // Release only after the run has consumed them: the old cache is an input to the step
                 // that just completed, and the new one now owns those buffers.
                 model.backend.release(stepIds)
+                currentStepIds = null
                 model.backend.releaseAll(cache)
                 logits?.let { model.backend.release(it) }
 
@@ -167,6 +185,9 @@ class OnnxDecodeEngine(private val model: OnnxModel) {
 
             return rows.map { row -> model.decode(trimAtEos(row).toLongArray()) }
         } finally {
+            currentStepIds?.let { model.backend.release(it) }
+            encoderInputIds?.let { model.backend.release(it) }
+            firstDecoderInputIds?.let { model.backend.release(it) }
             logits?.let { model.backend.release(it) }
             model.backend.releaseAll(cache)
             liveMask?.let { model.backend.release(it) }

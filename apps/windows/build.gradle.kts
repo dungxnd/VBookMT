@@ -134,7 +134,7 @@ compose.desktop {
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi
             )
             packageName = "VBookMT"
-            packageVersion = "1.2.0"
+            packageVersion = "1.2.1"
             description = "VBookMT Desktop Host - Offline AI Translation"
             vendor = "VBookMT"
 

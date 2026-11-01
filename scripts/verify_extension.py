@@ -235,6 +235,123 @@ def compare_settings(ext: dict) -> list[str]:
 
 
 
+# ---------------------------------------------------------------------------------------------
+# Codec bootstrap
+#
+# translate.js cannot speak to the host without `wire.js`, and it pulls that file in with
+# `load('wire.js')`. Per vBook's extension-api.md that call is a **text substitution performed before
+# the script runs** — "not a function call: the line is replaced with the file's content". So:
+#
+#  - `load` is never a callable global, and `if (typeof load === "function") { load('wire.js') }` is
+#    dead code on every device. It shipped that way once: VBookWire stayed undefined, translate.js
+#    took its "codec missing" branch, and every chapter answered with QuickTranslator prefixed
+#    "[QT Fallback - Máy chủ VBookMT chưa bật]" while the host was running perfectly. That is the
+#    single most misleading failure this extension can produce, because it blames the server.
+#  - the argument must be a string literal and the file must sit at the **top level of src/**; a path
+#    like `src/wire.js` is not a top-level name and is replaced by nothing, silently;
+#  - the pattern is matched **anywhere in the text, including comments**, so every `load('...')` that
+#    appears in the file must name a real top-level script.
+# ---------------------------------------------------------------------------------------------
+
+#: A `load('...')` / `load("...")` invocation with its literal argument.
+LOAD_INVOCATION = re.compile(r"""\bload\s*\(\s*(['"`])([^'"`]*)\1\s*\)""")
+
+#: The dead-guard pattern: testing `load` for callability.
+TYPEOF_LOAD = re.compile(r"\btypeof\s+load\b")
+
+
+def _strip_js_comments_and_strings(text: str) -> str:
+    """Blanks comments and string literals, keeping newlines, so code can be inspected.
+
+    Needed because the prose that explains this very bug mentions `typeof load`, and a plain text
+    search would then flag the comment instead of the code.
+    """
+    out: list[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        char = text[i]
+        following = text[i + 1] if i + 1 < n else ""
+        if char == "/" and following == "/":
+            while i < n and text[i] != "\n":
+                i += 1
+        elif char == "/" and following == "*":
+            i += 2
+            while i < n and not (text[i] == "*" and i + 1 < n and text[i + 1] == "/"):
+                if text[i] == "\n":
+                    out.append("\n")
+                i += 1
+            i += 2
+        elif char in ("'", '"', "`"):
+            quote = char
+            i += 1
+            while i < n:
+                if text[i] == "\\":
+                    i += 2
+                    continue
+                if text[i] == quote:
+                    i += 1
+                    break
+                if text[i] == "\n":
+                    out.append("\n")
+                i += 1
+            out.append(" ")
+        else:
+            out.append(char)
+            i += 1
+    return "".join(out)
+
+
+def compare_codec_bootstrap(ext: dict) -> list[str]:
+    """translate.js must be able to reach the gRPC-Web codec at runtime, on a real device."""
+    ext_name: str = ext["name"]
+    src_dir: Path = ext["dir"] / "src"
+    translate_path = src_dir / "translate.js"
+    wire_path = src_dir / "wire.js"
+
+    if not translate_path.exists():
+        # A missing script is already reported by the artifact comparison; nothing to inspect.
+        return []
+
+    raw = translate_path.read_text(encoding="utf-8")
+    problems: list[str] = []
+
+    if not wire_path.exists():
+        problems.append("  src/wire.js is missing, so translate.js has no gRPC-Web codec")
+
+    if TYPEOF_LOAD.search(_strip_js_comments_and_strings(raw)):
+        problems.append(
+            "  src/translate.js tests `typeof load`: load() is a pre-run text substitution in vBook, "
+            "not a callable global, so anything behind that guard never runs and the codec never loads"
+        )
+
+    targets = [match.group(2) for match in LOAD_INVOCATION.finditer(raw)]
+    if "wire.js" not in targets:
+        problems.append(
+            "  src/translate.js never loads wire.js: without the codec every chapter falls back to "
+            "QuickTranslator even while the host is running"
+        )
+
+    for target in targets:
+        if "/" in target or "\\" in target:
+            problems.append(
+                f"  load({target!r}) names a path, but vBook only resolves files at the top level of "
+                f"src/; this call is replaced by nothing"
+            )
+        elif not (src_dir / target).exists():
+            problems.append(
+                f"  load({target!r}) names a file that is not in src/ — this call is replaced by nothing"
+            )
+
+    if wire_path.exists() and "VBookWire" not in _strip_js_comments_and_strings(
+        wire_path.read_text(encoding="utf-8")
+    ):
+        problems.append("  src/wire.js does not define VBookWire, so the codec would not exist")
+
+    if problems:
+        problems.insert(0, f"[{ext_name}] the gRPC-Web codec would not load on a device:")
+    return problems
+
+
 def main() -> int:
     if "--fix" in sys.argv:
         sys.path.insert(0, str(ROOT / "scripts"))
@@ -248,6 +365,7 @@ def main() -> int:
             continue
         all_problems.extend(compare_artifact(ext))
         all_problems.extend(compare_settings(ext))
+        all_problems.extend(compare_codec_bootstrap(ext))
 
     if all_problems:
         print("\n".join(all_problems))

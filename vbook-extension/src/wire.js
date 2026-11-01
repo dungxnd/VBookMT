@@ -179,7 +179,23 @@
     };
 
     ProtoWriter.prototype.writeVarint = function (val) {
-        // Safe 32-bit/53-bit varint encoder
+        if (val < 0) {
+            // Protobuf negative int32 is a 10-byte two's complement 64-bit varint
+            var low = val >>> 0;
+            var high = 0xffffffff;
+            for (var i = 0; i < 4; i++) {
+                this.writeByte((low & 0x7f) | 0x80);
+                low >>>= 7;
+            }
+            this.writeByte(((low & 0x0f) | ((high & 0x07) << 4)) | 0x80);
+            high >>>= 3;
+            for (var j = 0; j < 4; j++) {
+                this.writeByte((high & 0x7f) | 0x80);
+                high >>>= 7;
+            }
+            this.writeByte(high & 0x01);
+            return;
+        }
         while (val > 0x7f) {
             this.writeByte((val & 0x7f) | 0x80);
             val = Math.floor(val / 128);
@@ -266,19 +282,40 @@
         return this.pos < this.bytes.length;
     };
 
-    ProtoReader.prototype.readVarint = function () {
-        var res = 0;
+    ProtoReader.prototype.readVarintParts = function () {
+        var low = 0;
+        var high = 0;
         var shift = 0;
-        while (shift < 56) {
+        while (shift < 70) {
             if (this.pos >= this.bytes.length) {
                 throw new Error("Unexpected EOF reading varint");
             }
             var b = this.bytes[this.pos++];
-            res += (b & 0x7f) * Math.pow(2, shift);
-            if ((b & 0x80) === 0) return res;
+            if (shift < 28) {
+                low |= (b & 0x7f) << shift;
+            } else if (shift === 28) {
+                low |= (b & 0x0f) << 28;
+                high |= (b & 0x70) >> 4;
+            } else if (shift < 53) {
+                high |= (b & 0x7f) << (shift - 32);
+            }
+            if ((b & 0x80) === 0) {
+                return { low: low, high: high };
+            }
             shift += 7;
         }
         throw new Error("Varint overflow");
+    };
+
+    ProtoReader.prototype.readVarint = function () {
+        var parts = this.readVarintParts();
+        if (parts.high === 0) return parts.low >>> 0;
+        return (parts.high * 4294967296) + (parts.low >>> 0);
+    };
+
+    ProtoReader.prototype.readInt32 = function () {
+        var parts = this.readVarintParts();
+        return parts.low | 0;
     };
 
     ProtoReader.prototype.readString = function () {
@@ -293,10 +330,6 @@
 
     ProtoReader.prototype.readBool = function () {
         return this.readVarint() !== 0;
-    };
-
-    ProtoReader.prototype.readInt32 = function () {
-        return this.readVarint() | 0;
     };
 
     ProtoReader.prototype.readDouble = function () {
@@ -468,7 +501,7 @@
         writer.writeDouble(19, rep.cache_hit_pct || rep.cacheHitPct || 0.0);
         writer.writeInt32(20, rep.cache_disk_bytes || rep.cacheDiskBytes || 0);
         writer.writeInt32(21, rep.cache_disk_restored || rep.cacheDiskRestored || 0);
-        writer.writeInt32(22, rep.pss_mb || rep.pssMb || 0);
+        writer.writeInt32(22, rep.pss_mb !== undefined ? rep.pss_mb : (rep.pssMb !== undefined ? rep.pssMb : 0));
         writer.writeInt32(23, rep.jvm_heap_mb || rep.jvmHeapMb || 0);
         return writer.toUint8Array();
     }

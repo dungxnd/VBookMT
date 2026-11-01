@@ -47,11 +47,15 @@ object WindowsTranslator {
     }
 
     fun clearCache() {
-        WindowsState.cache.clear()
+        synchronized(WindowsState.cacheLock) {
+            WindowsState.cache.clear()
+        }
         WindowsCacheStore.clear()
     }
 
-    fun cacheStats(): TranslationCache.Stats = WindowsState.cache.stats()
+    fun cacheStats(): TranslationCache.Stats = synchronized(WindowsState.cacheLock) {
+        WindowsState.cache.stats()
+    }
 
     suspend fun init(
         modelId: String = WindowsState.activeModel.value,
@@ -109,8 +113,14 @@ object WindowsTranslator {
 
         val cacheDelegate = object : ChapterTranslationPipeline.CacheDelegate {
             override val cacheEnabled: Boolean get() = this@WindowsTranslator.cacheEnabled
-            override fun get(key: String): String? = WindowsState.cache.get(key)
-            override fun put(key: String, value: String) { WindowsState.cache.put(key, value) }
+            override fun get(key: String): String? = synchronized(WindowsState.cacheLock) {
+                WindowsState.cache.get(key)
+            }
+            override fun put(key: String, value: String) {
+                synchronized(WindowsState.cacheLock) {
+                    WindowsState.cache.put(key, value)
+                }
+            }
             override fun onPersist(entries: List<Pair<String, String>>) { WindowsCacheStore.append(entries) }
         }
 

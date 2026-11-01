@@ -30,7 +30,7 @@ val ONNX_CORE_FILES: List<String> = listOf(
     "trim_meta.json"
 )
 
-/** Files for an ONNX variant, which lives in a subfolder of the repo (`fp16/`, `q8/`, `q16/`). */
+/** Files for an ONNX variant, which lives in a subfolder of the repo (`fp16/`, `q8/`). */
 fun onnxVariantFiles(variant: QuantVariant): List<String> =
     ONNX_CORE_FILES.map { "${variant.folder}/$it" }
 
@@ -42,12 +42,11 @@ fun onnxVariantFiles(variant: QuantVariant): List<String> =
  * | variant | size vs fp16 | chrF vs fp32 | CPU vs fp16 |
  * | :--- | ---: | ---: | ---: |
  * | fp16 | 100% | 100.00 | baseline |
- * | q16 | 85% | 98.0 – 100.00 | slower |
  * | q8 | 62% | 96.0 – 96.25 | faster, ~25% less CPU |
  *
  * q8 is the one that matters on a phone: it was the only variant that used *less* memory and CPU than
  * fp16, because decode is bandwidth-bound and int8 weights halve the bytes read. fp16 is the safe
- * default for quality; q16 is the middle option that matched fp16 exactly on one model.
+ * default for quality.
  */
 @Serializable
 enum class QuantVariant(
@@ -68,11 +67,6 @@ enum class QuantVariant(
         mapOf("hachimi-60-qt" to 205, "moxhi-30-qt" to 142),
         "Chất lượng cao nhất",
     ),
-    Q16(
-        "q16", "Q16",
-        mapOf("hachimi-60-qt" to 167, "moxhi-30-qt" to 121),
-        "Gần bằng FP16, nhẹ hơn",
-    ),
     Q8(
         "q8", "Q8",
         mapOf("hachimi-60-qt" to 124, "moxhi-30-qt" to 88),
@@ -85,7 +79,10 @@ enum class QuantVariant(
     companion object {
         val DEFAULT: QuantVariant = FP16
         fun parse(value: String): QuantVariant =
-            entries.firstOrNull { it.folder.equals(value.trim(), ignoreCase = true) } ?: DEFAULT
+            entries.firstOrNull {
+                it.folder.equals(value.trim(), ignoreCase = true) ||
+                    it.name.equals(value.trim(), ignoreCase = true)
+            } ?: DEFAULT
     }
 }
 
@@ -147,7 +144,7 @@ object ModelRegistry {
      * The 60-QT artifact: the largest, best-quality model, and the default because quality is what a
      * reader notices first and the download happens once.
      *
-     * ONNX FP16 measures ~205 MB. q8 and q16 are the same model in smaller, cheaper builds — see
+     * ONNX FP16 measures ~205 MB. q8 is the same model in a smaller, cheaper build — see
      * [QuantVariant] — so the size here is only the default variant's.
      */
     val HACHIMI_60_QT = ModelSpec(

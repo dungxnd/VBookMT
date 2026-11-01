@@ -261,6 +261,19 @@ object EnergyHarness {
         }
     }
 
+    /**
+     * Aborts an open measurement window without recording a chapter (e.g. when fully cached).
+     */
+    fun discard(handle: Long) {
+        if (context == null || handle <= 0L) return
+        synchronized(lock) {
+            val current = window ?: return
+            if (current.startedAtMs == handle) {
+                window = null
+            }
+        }
+    }
+
     /** The session records as JSONL lines for the wire EnergySnapshot RPC. */
     fun recordsJsonl(): List<String> {
         val active = session ?: lastSession ?: return emptyList()

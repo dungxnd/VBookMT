@@ -261,4 +261,18 @@ class OnnxDecodeEngineTest {
         assertEquals("200,300", out[1])
         assertEquals("300,100,200", out[2])
     }
+
+    @Test
+    fun emptyOrBlankTextsReturnEmptyStringsSafely() {
+        class EmptyTokenizer : OnnxTokenizer {
+            override fun encode(text: String): LongArray = LongArray(0)
+            override fun decode(ids: LongArray): String = ""
+        }
+        val backend = FakeBackend(keepIds, emptyList(), batch = 1)
+        val model = OnnxModel(backend, EmptyTokenizer(), keepIds, emptyList(), emptyList())
+        val out = OnnxDecodeEngine(model).translate(listOf("", "  "))
+        assertEquals(2, out.size)
+        assertEquals("", out[0])
+        assertEquals("", out[1])
+    }
 }

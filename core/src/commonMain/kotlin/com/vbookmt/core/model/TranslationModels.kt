@@ -34,8 +34,8 @@ data class TranslateConfig(
     val chunkChars: Int = 0,
     /**
      * **Inert.** This used to select CTranslate2's arithmetic (`int8`, `int8_float32`, `int16`, …).
-     * ONNX has no such runtime knob — precision is a property of the downloaded artifact (fp16 / q8 /
-     * q16) — so the field is accepted for wire compatibility and echoed back in the config report, but
+     * ONNX has no such runtime knob — precision is a property of the downloaded artifact (fp16 / q8) —
+     * so the field is accepted for wire compatibility and echoed back in the config report, but
      * changing it does nothing. Only [threads] triggers an engine reload.
      */
     val computeType: String = "",

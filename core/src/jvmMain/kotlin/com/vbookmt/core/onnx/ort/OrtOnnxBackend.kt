@@ -34,7 +34,9 @@ class OrtOnnxBackend(
 
     override fun run(graph: String, inputs: Map<String, TensorHandle>): List<TensorHandle> {
         val session = sessions[graph] ?: error("no session registered for graph '$graph'")
-        val feed = inputs.mapValues { (_, v) -> v as OnnxTensor }
+        @Suppress("UNCHECKED_CAST")
+        val feed = inputs as? Map<String, OnnxTensor>
+            ?: inputs.mapValues { (_, v) -> v as OnnxTensor }
         val result = session.run(feed)
         // Deliberately not closing `result`: that would close the tensors being returned.
         return (0 until result.size()).map { result.get(it) }
@@ -50,17 +52,38 @@ class OrtOnnxBackend(
         val tensor = handle as OnnxTensor
         val info = tensor.info
         val elements = info.shape.fold(1L) { acc, d -> acc * d }.toInt()
-
-        // fp16 graphs: getFloatBuffer() refuses, so decode the halves ourselves.
-        if (info.type == OnnxJavaType.FLOAT16 || info.type == OnnxJavaType.BFLOAT16) {
-            val shorts = tensor.shortBuffer
-            val out = FloatArray(elements)
-            for (i in 0 until elements) out[i] = halfToFloat(shorts.get(i).toInt() and 0xFFFF)
-            return out
-        }
-
         val out = FloatArray(elements)
-        tensor.floatBuffer.get(out)
+
+        when (info.type) {
+            OnnxJavaType.FLOAT16 -> {
+                val buf = tensor.shortBuffer
+                if (buf.hasArray()) {
+                    val raw = buf.array()
+                    val offset = buf.arrayOffset()
+                    for (i in 0 until elements) out[i] = halfToFloat(raw[offset + i].toInt() and 0xFFFF)
+                } else {
+                    val raw = ShortArray(elements)
+                    buf.duplicate().get(raw)
+                    for (i in 0 until elements) out[i] = halfToFloat(raw[i].toInt() and 0xFFFF)
+                }
+            }
+            OnnxJavaType.BFLOAT16 -> {
+                val buf = tensor.shortBuffer
+                if (buf.hasArray()) {
+                    val raw = buf.array()
+                    val offset = buf.arrayOffset()
+                    for (i in 0 until elements) out[i] = bf16ToFloat(raw[offset + i])
+                } else {
+                    val raw = ShortArray(elements)
+                    buf.duplicate().get(raw)
+                    for (i in 0 until elements) out[i] = bf16ToFloat(raw[i])
+                }
+            }
+            OnnxJavaType.FLOAT -> {
+                tensor.floatBuffer.duplicate().get(out)
+            }
+            else -> error("readFloats: unsupported type ${info.type}")
+        }
         return out
     }
 
@@ -72,13 +95,9 @@ class OrtOnnxBackend(
      * Argmax over each row's last position, straight off the tensor's own buffer.
      *
      * The decode loop calls this once per generated token, so it is the single hottest piece of Kotlin
-     * in the ONNX path. The old route was `readFloats` (converting the entire `[batch, 1, vocab]`
-     * tensor to fp32) followed by a scan — ~95k conversions per step at batch 16 × 5,951 vocab, when
-     * only 16 values are ever used.
-     *
-     * fp16 comparison is exact for this purpose: half-precision ordering matches the floats it would
-     * convert to, so the chosen index cannot differ. NaN never appears in these logits; if it did,
-     * `>` against NaN is false and the index would simply not move, same as before.
+     * in the ONNX path. If the buffer is heap-backed, reads directly from the array. Otherwise bulk-reads
+     * each row into a reusable array via duplicate() and compares FP16/BF16 bits directly via
+     * [fp16ToComparable] without converting to float32.
      */
     override fun argmaxLastRow(handle: TensorHandle, rows: Int, vocab: Int): IntArray {
         val tensor = handle as OnnxTensor
@@ -87,42 +106,84 @@ class OrtOnnxBackend(
         if (rows <= 0 || vocab <= 0) return result
 
         val rowWidth = elements / rows
+        require(vocab <= rowWidth) { "vocab ($vocab) cannot exceed rowWidth ($rowWidth)" }
         val lastOffset = rowWidth - vocab
 
         when (tensor.info.type) {
             OnnxJavaType.FLOAT16, OnnxJavaType.BFLOAT16 -> {
                 val buf = tensor.shortBuffer
-                for (row in 0 until rows) {
-                    val base = row * rowWidth + lastOffset
-                    // Compare as signed 16-bit halves: fp16 negatives have the sign bit set, and the
-                    // raw short is already ordered correctly for two's-complement comparison of the
-                    // same sign. Mixed-sign rows are handled by seeding with the first element.
-                    var best = 0
-                    var bestVal = halfToFloat(buf.get(base).toInt() and 0xFFFF)
-                    for (i in 1 until vocab) {
-                        val v = halfToFloat(buf.get(base + i).toInt() and 0xFFFF)
-                        if (v > bestVal) {
-                            bestVal = v
-                            best = i
+                if (buf.hasArray()) {
+                    val raw = buf.array()
+                    val baseOffset = buf.arrayOffset() + lastOffset
+                    for (row in 0 until rows) {
+                        val base = baseOffset + row * rowWidth
+                        var best = 0
+                        var bestVal = fp16ToComparable(raw[base])
+                        for (i in 1 until vocab) {
+                            val v = fp16ToComparable(raw[base + i])
+                            if (v > bestVal) {
+                                bestVal = v
+                                best = i
+                            }
                         }
+                        result[row] = best
                     }
-                    result[row] = best
+                } else {
+                    val dup = buf.duplicate()
+                    val rowBuf = ShortArray(vocab)
+                    for (row in 0 until rows) {
+                        val base = row * rowWidth + lastOffset
+                        dup.position(base)
+                        dup.get(rowBuf, 0, vocab)
+                        var best = 0
+                        var bestVal = fp16ToComparable(rowBuf[0])
+                        for (i in 1 until vocab) {
+                            val v = fp16ToComparable(rowBuf[i])
+                            if (v > bestVal) {
+                                bestVal = v
+                                best = i
+                            }
+                        }
+                        result[row] = best
+                    }
                 }
             }
             else -> {
                 val buf = tensor.floatBuffer
-                for (row in 0 until rows) {
-                    val base = row * rowWidth + lastOffset
-                    var best = 0
-                    var bestVal = buf.get(base)
-                    for (i in 1 until vocab) {
-                        val v = buf.get(base + i)
-                        if (v > bestVal) {
-                            bestVal = v
-                            best = i
+                if (buf.hasArray()) {
+                    val raw = buf.array()
+                    val baseOffset = buf.arrayOffset() + lastOffset
+                    for (row in 0 until rows) {
+                        val base = baseOffset + row * rowWidth
+                        var best = 0
+                        var bestVal = raw[base]
+                        for (i in 1 until vocab) {
+                            val v = raw[base + i]
+                            if (v > bestVal) {
+                                bestVal = v
+                                best = i
+                            }
                         }
+                        result[row] = best
                     }
-                    result[row] = best
+                } else {
+                    val dup = buf.duplicate()
+                    val rowBuf = FloatArray(vocab)
+                    for (row in 0 until rows) {
+                        val base = row * rowWidth + lastOffset
+                        dup.position(base)
+                        dup.get(rowBuf, 0, vocab)
+                        var best = 0
+                        var bestVal = rowBuf[0]
+                        for (i in 1 until vocab) {
+                            val v = rowBuf[i]
+                            if (v > bestVal) {
+                                bestVal = v
+                                best = i
+                            }
+                        }
+                        result[row] = best
+                    }
                 }
             }
         }
@@ -151,9 +212,20 @@ class OrtOnnxBackend(
             OnnxJavaType.FLOAT16, OnnxJavaType.BFLOAT16 -> {
                 val src = tensor.shortBuffer
                 val dst = ShortArray(keep.size * perRow)
-                keep.forEachIndexed { i, row ->
-                    src.position(row * perRow)
-                    src.get(dst, i * perRow, perRow)
+                if (src.hasArray()) {
+                    val srcArr = src.array()
+                    val srcOffset = src.arrayOffset()
+                    keep.forEachIndexed { i, row ->
+                        require(row in 0 until rows) { "Row $row out of bounds for tensor with $rows rows" }
+                        System.arraycopy(srcArr, srcOffset + row * perRow, dst, i * perRow, perRow)
+                    }
+                } else {
+                    val dup = src.duplicate()
+                    keep.forEachIndexed { i, row ->
+                        require(row in 0 until rows) { "Row $row out of bounds for tensor with $rows rows" }
+                        dup.position(row * perRow)
+                        dup.get(dst, i * perRow, perRow)
+                    }
                 }
                 OnnxTensor.createTensor(env, ShortBuffer.wrap(dst), outShape, tensor.info.type)
             }
@@ -161,9 +233,20 @@ class OrtOnnxBackend(
             OnnxJavaType.FLOAT -> {
                 val src = tensor.floatBuffer
                 val dst = FloatArray(keep.size * perRow)
-                keep.forEachIndexed { i, row ->
-                    src.position(row * perRow)
-                    src.get(dst, i * perRow, perRow)
+                if (src.hasArray()) {
+                    val srcArr = src.array()
+                    val srcOffset = src.arrayOffset()
+                    keep.forEachIndexed { i, row ->
+                        require(row in 0 until rows) { "Row $row out of bounds for tensor with $rows rows" }
+                        System.arraycopy(srcArr, srcOffset + row * perRow, dst, i * perRow, perRow)
+                    }
+                } else {
+                    val dup = src.duplicate()
+                    keep.forEachIndexed { i, row ->
+                        require(row in 0 until rows) { "Row $row out of bounds for tensor with $rows rows" }
+                        dup.position(row * perRow)
+                        dup.get(dst, i * perRow, perRow)
+                    }
                 }
                 OnnxTensor.createTensor(env, FloatBuffer.wrap(dst), outShape)
             }
@@ -176,19 +259,37 @@ class OrtOnnxBackend(
         sessions.values.forEach { runCatching { it.close() } }
     }
 
-    /** IEEE 754 half -> single. Subnormals and inf/nan are not emitted by these graphs but are handled. */
+    /**
+     * Works for any 16-bit sign-magnitude floating point format (IEEE FP16 and BF16).
+     * Bit 15 is sign; remaining 15 bits are magnitude.
+     */
+    private fun fp16ToComparable(raw: Short): Int =
+        if (raw >= 0) raw.toInt() else -32768 - raw.toInt()
+
+    private fun bf16ToFloat(raw: Short): Float =
+        Float.fromBits((raw.toInt() and 0xFFFF) shl 16)
+
+    /** IEEE 754 half -> single. Subnormals and inf/nan are handled. */
     private fun halfToFloat(h: Int): Float {
         val sign = (h ushr 15) and 0x1
         val exponent = (h ushr 10) and 0x1F
         val mantissa = h and 0x3FF
-        val value = when {
-            exponent == 0 -> if (mantissa == 0) 0f else mantissa * 5.9604645e-8f
-            exponent == 31 -> if (mantissa == 0) Float.POSITIVE_INFINITY else Float.NaN
+        return when (exponent) {
+            0 -> {
+                val mag = mantissa * 5.9604645e-8f // 2^-24
+                if (sign == 1) -mag else mag
+            }
+            31 -> {
+                if (mantissa == 0) {
+                    if (sign == 1) Float.NEGATIVE_INFINITY else Float.POSITIVE_INFINITY
+                } else {
+                    Float.NaN
+                }
+            }
             else -> {
                 val bits = (sign shl 31) or ((exponent - 15 + 127) shl 23) or (mantissa shl 13)
                 Float.fromBits(bits)
             }
         }
-        return if (sign == 1) -value else value
     }
 }

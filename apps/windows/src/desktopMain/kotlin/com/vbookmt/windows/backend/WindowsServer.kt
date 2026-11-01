@@ -26,6 +26,7 @@ object WindowsServer {
     private object Service : BaseTranslatorRpcService(
         hostName = "windows",
         port = PORT,
+        maxTranslateTimeoutMs = 110_000L,
     ) {
         override val activeModelId: String get() = WindowsState.activeModel.value
         override val isEngineReady: Boolean get() = WindowsTranslator.isReady()
@@ -56,7 +57,7 @@ object WindowsServer {
         }
 
         override fun onInFlightChanged(delta: Int) {
-            WindowsState.inFlight.addAndGet(delta)
+            WindowsState.changeInFlight(delta)
         }
 
         override fun onRecordLatency(latencyMs: Long) {
@@ -82,19 +83,28 @@ object WindowsServer {
 
     fun start() {
         if (serverEngine != null) return
-        try {
-            val engine = KtorTranslatorServer.create(
-                port = PORT,
-                host = currentHost,
-                serviceTitle = "VBookMT Desktop 1.2.0",
-                service = Service
-            )
-            engine.start(wait = false)
-            serverEngine = engine
-            WindowsState.setRunning(true)
-        } catch (e: Exception) {
-            WindowsState.log("Không thể khởi động server: ${e.message}")
-            WindowsState.setRunning(false)
+        var attempts = 0
+        while (attempts < 3) {
+            try {
+                val engine = KtorTranslatorServer.create(
+                    port = PORT,
+                    host = currentHost,
+                    serviceTitle = "VBookMT Desktop 1.2.1",
+                    service = Service
+                )
+                engine.start(wait = false)
+                serverEngine = engine
+                WindowsState.setRunning(true)
+                return
+            } catch (e: Exception) {
+                attempts++
+                if (attempts < 3) {
+                    Thread.sleep(150)
+                } else {
+                    WindowsState.log("Không thể khởi động server: ${e.message}")
+                    WindowsState.setRunning(false)
+                }
+            }
         }
     }
 

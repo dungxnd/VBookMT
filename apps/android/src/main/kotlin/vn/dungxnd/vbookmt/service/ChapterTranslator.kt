@@ -25,6 +25,13 @@ object ChapterTranslator {
         if (rawText.isBlank()) return ""
 
         val chapterStart = SystemClock.elapsedRealtime()
+        val measure = EnergyHarness.begin(
+            sourceChars = rawText.length,
+            threads = NativeTokenizer.recommendedThreadCount(),
+            model = ServiceState.activeModel.value,
+            startedAtMs = chapterStart,
+        )
+
         val res = ChapterTranslationPipeline.translate(
             rawText = rawText,
             chunkChars = chunkChars,
@@ -35,22 +42,18 @@ object ChapterTranslator {
             logger = { ServiceState.log(it) }
         )
 
-        val measure = if (res.fullyCached) {
-            0L
-        } else {
-            EnergyHarness.begin(
-                sourceChars = rawText.length,
-                threads = NativeTokenizer.recommendedThreadCount(),
-                model = ServiceState.activeModel.value,
-                startedAtMs = chapterStart,
-            )
-        }
-
         ServiceState.log(
             "Dịch xong: ${res.paragraphCount} đoạn, ${res.chunkCount} chunks, " +
                 "${res.translatedText.length} ký tự đầu ra (chunk $chunkChars ký tự)"
         )
-        if (measure != 0L) EnergyHarness.end(measure, res.translatedText.length)?.let { ServiceState.log(it) }
+
+        if (measure != 0L) {
+            if (res.fullyCached) {
+                EnergyHarness.discard(measure)
+            } else {
+                EnergyHarness.end(measure, res.translatedText.length)?.let { ServiceState.log(it) }
+            }
+        }
         return res.translatedText
     }
 }

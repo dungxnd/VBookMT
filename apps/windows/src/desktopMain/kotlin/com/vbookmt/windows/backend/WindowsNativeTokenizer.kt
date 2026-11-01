@@ -60,7 +60,22 @@ object WindowsNativeTokenizer {
             File(object {}.javaClass.protectionDomain.codeSource.location.toURI())
         }.getOrNull()
         val base = if (codeLocation?.isFile == true) codeLocation.parentFile else codeLocation
-        return base ?: File(".").absoluteFile
+
+        val candidates = listOfNotNull(
+            base?.let { File(it, "resources") },
+            base,
+            base?.parentFile?.let { File(it, "resources") },
+            base?.parentFile?.let { File(it, "app/resources") },
+            base?.parentFile,
+            File("resources"),
+            File("apps/windows/resources-packaged/windows"),
+            File("resources-packaged/windows"),
+            File("."),
+        )
+        val found = candidates.firstOrNull { File(it, "vbookmt_native.dll").isFile }
+        if (found != null) return found.absoluteFile
+
+        return (base?.let { File(it, "resources") } ?: base ?: File(".")).absoluteFile
     }
 
     /**
@@ -70,12 +85,26 @@ object WindowsNativeTokenizer {
      * download without restarting the process.
      */
     fun ensureLoaded(nativeDir: File): Boolean {
-        if (loadState.get()) return loadError == null
+        if (loadState.get() && loadError == null) return true
         synchronized(this) {
-            if (loadState.get()) return loadError == null
+            if (loadState.get() && loadError == null) return true
             try {
-                val engine = File(nativeDir, "vbookmt_native.dll")
-                if (!engine.exists()) {
+                val candidateDirs = listOfNotNull(
+                    nativeDir,
+                    File(nativeDir, "resources"),
+                    nativeDir.parentFile?.let { File(it, "resources") },
+                    nativeDir.parentFile?.let { File(it, "app/resources") },
+                    nativeDir.parentFile,
+                    File("apps/windows/resources-packaged/windows"),
+                    File("resources-packaged/windows"),
+                    File("resources"),
+                    File("."),
+                )
+                val engine = candidateDirs
+                    .map { File(it, "vbookmt_native.dll") }
+                    .firstOrNull { it.isFile }
+
+                if (engine == null || !engine.exists()) {
                     loadError = "Thiếu vbookmt_native.dll trong ${nativeDir.absolutePath}"
                     loadState.set(true)
                     return false

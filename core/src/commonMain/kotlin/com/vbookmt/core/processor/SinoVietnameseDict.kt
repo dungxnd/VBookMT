@@ -245,7 +245,8 @@ object SinoVietnameseDict {
             if (capitalizeNext && ch.isLetter()) {
                 chars[idx] = ch.uppercaseChar()
                 capitalizeNext = false
-            } else if (ch == '.' || ch == '!' || ch == '?' || ch == '\n' || ch == '“' || ch == '"') {
+            } else if (ch == '.' || ch == '!' || ch == '?' || ch == '。' || ch == '！' || ch == '？' ||
+                ch == '\n' || ch == '“' || ch == '"' || ch == '”') {
                 capitalizeNext = true
             }
         }

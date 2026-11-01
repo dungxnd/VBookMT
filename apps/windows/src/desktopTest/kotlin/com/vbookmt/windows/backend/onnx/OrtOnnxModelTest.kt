@@ -1,7 +1,10 @@
 package com.vbookmt.windows.backend.onnx
 
 import com.vbookmt.core.onnx.OnnxDecodeEngine
+import com.vbookmt.core.onnx.DelegateOnnxTokenizer
+import com.vbookmt.core.onnx.OnnxTokenizer
 import com.vbookmt.core.onnx.ort.OrtOnnxModel
+import com.vbookmt.windows.backend.WindowsNativeTokenizer
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
@@ -38,6 +41,24 @@ class OrtOnnxModelTest {
             ?.let { Path.of(it) }
             ?.takeIf { Files.isDirectory(it) }
 
+    private fun resolveTokenizer(dir: Path): OnnxTokenizer {
+        val json = dir.resolve("tokenizer.json")
+        if (Files.isRegularFile(json)) {
+            return DjlTestTokenizer.fromModelDir(dir)
+        }
+        val nativeDir = WindowsNativeTokenizer.nativeDir()
+        check(WindowsNativeTokenizer.ensureLoaded(nativeDir)) {
+            "Failed to load native tokenizer: ${WindowsNativeTokenizer.loadError()}"
+        }
+        check(WindowsNativeTokenizer.load(dir.toFile().absolutePath)) {
+            "Failed to load .spm files from $dir"
+        }
+        return DelegateOnnxTokenizer(
+            encodeFn = { WindowsNativeTokenizer.encode(it) },
+            decodeFn = { WindowsNativeTokenizer.decode(it) }
+        )
+    }
+
     private val expected = mapOf(
         "他抬头看向远处的山门。" to "Hắn ngẩng đầu nhìn về phía sơn môn xa xa.",
         "本王不要看。朕且听你说。" to "Bản vương không muốn nhìn. Trẫm tạm nghe ngươi nói.",
@@ -47,7 +68,7 @@ class OrtOnnxModelTest {
     @Test
     fun translatesRealGraphsExactly() {
         val dir = modelDir() ?: return
-        OrtOnnxModel.load(dir, tokenizer = DjlTestTokenizer.fromModelDir(dir)).use { loaded ->
+        OrtOnnxModel.load(dir, tokenizer = resolveTokenizer(dir)).use { loaded ->
             val engine = OnnxDecodeEngine(loaded.model)
             for ((source, want) in expected) {
                 val got = engine.translate(listOf(source), maxSteps = 48).single()
@@ -59,7 +80,7 @@ class OrtOnnxModelTest {
     @Test
     fun batchingMatchesSingleRowOutput() {
         val dir = modelDir() ?: return
-        OrtOnnxModel.load(dir, tokenizer = DjlTestTokenizer.fromModelDir(dir)).use { loaded ->
+        OrtOnnxModel.load(dir, tokenizer = resolveTokenizer(dir)).use { loaded ->
             val engine = OnnxDecodeEngine(loaded.model)
             val sources = expected.keys.toList()
 
@@ -76,7 +97,7 @@ class OrtOnnxModelTest {
     @Test
     fun outputVocabularyIsTrimmedNotFull() {
         val dir = modelDir() ?: return
-        OrtOnnxModel.load(dir, tokenizer = DjlTestTokenizer.fromModelDir(dir)).use { loaded ->
+        OrtOnnxModel.load(dir, tokenizer = resolveTokenizer(dir)).use { loaded ->
             // 5,951 for the shipped trim. A 24,000 here means the untrimmed graph was loaded and the
             // keep_ids mapping would index past the end of the logits on the first token.
             assertEquals(5951, loaded.model.outputVocabSize)

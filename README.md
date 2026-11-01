@@ -16,7 +16,7 @@ Bạn cần cài đặt ứng dụng VBookMT trên điện thoại hoặc máy t
   3. Gạt nút **Bật dịch offline** (ứng dụng sẽ chạy ngầm và mở cổng dịch nội bộ `8765`).
 
 * **Trên máy tính Windows**:
-  1. Tải và cài đặt `VBookMT-1.2.0.msi` từ mục [Releases](https://github.com/DungxND/VBookMT/releases).
+  1. Tải và cài đặt `VBookMT-1.2.1.msi` từ mục [Releases](https://github.com/DungxND/VBookMT/releases).
   2. Mở app, tải mô hình dịch và nhấn **Bật máy chủ**.
   3. *(Tùy chọn)*: Bật **"Cho phép thiết bị khác kết nối & dò tìm qua LAN"** nếu bạn muốn dùng máy tính để dịch cho vBook trên điện thoại cùng mạng Wi-Fi.
 
@@ -47,12 +47,11 @@ Sau khi đã bật app VBookMT, bạn cài tiện ích vào vBook để đọc t
 | **HachimiMT 60 QT** | ONNX | 124–205 MB | ngocdang83 (ONNX: DungxND) | Mặc định — Chất lượng dịch cao nhất, chuẩn phong cách convert kiếm hiệp/tiên hiệp |
 | **MoxhiMT 30 QT** | ONNX | 88–142 MB | DanVP (ONNX: DungxND) | Siêu nhẹ — Tốc độ dịch nhanh, tiết kiệm RAM cho máy cấu hình thấp |
 
-Mỗi mô hình có **ba mức lượng tử hoá**, chọn ngay trong app trước khi tải:
+Mỗi mô hình có **hai mức lượng tử hoá**, chọn ngay trong app trước khi tải:
 
 | Mức | HachimiMT 60 | MoxhiMT 30 | Chất lượng (chrF) | Ghi chú |
 | :--- | ---: | ---: | ---: | :--- |
 | **FP16** | 205 MB | 142 MB | 100.00 | Cao nhất, mặc định |
-| **Q16** | 167 MB | 121 MB | 98.0 – 100.00 | Gần bằng FP16, nhẹ hơn |
 | **Q8** | 124 MB | 88 MB | 96.0 – 96.25 | Nhẹ nhất, nhanh nhất, ít RAM nhất (−50 MB) |
 
 > chrF đo trên Snapdragon 8 Gen 3, so với chính bản fp32 của từng mô hình (100 = giống hệt).
@@ -73,5 +72,5 @@ Mỗi mô hình có **ba mức lượng tử hoá**, chọn ngay trong app trư�
 - **Mô hình dịch thuật**:
   - **HachimiMT-60-QT** bởi **[ngocdang83](https://huggingface.co/ngocdang83)** ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)).
   - **MoxhiMT-30-QT** bởi **[DanVP](https://huggingface.co/DanVP)** ([CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)).
-  - Các bản port và tối ưu hóa **ONNX 6k** (FP16 / Q16 / Q8) lưu trữ tại Hugging Face của **[dungxnd](https://huggingface.co/dungxnd)**.
+  - Các bản port và tối ưu hóa **ONNX 6k** (FP16 / Q8) lưu trữ tại Hugging Face của **[dungxnd](https://huggingface.co/dungxnd)**.
 - **Hệ sinh thái vBook** bởi **[Darkrai9x](https://github.com/Darkrai9x)**.

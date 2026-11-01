@@ -109,8 +109,8 @@ object ChapterTranslationPipeline {
 
         if (!engine.isReady()) {
             logger("THÔNG BÁO: Engine chưa sẵn sàng -> Hán-Việt cho ${plan.misses.size} đoạn")
-            fillFallback(resolved, plan.misses)
-            return Triple(finish(resolved), false, plan.misses.sumOf { it.positions.size })
+            val count = fillFallback(resolved, plan.misses)
+            return Triple(finish(resolved), false, count)
         }
 
         val groups = ChunkResolver.batches(
@@ -125,14 +125,13 @@ object ChapterTranslationPipeline {
             val translated = engine.rawTranslateBatch(group.map { it.text }, numBeams)
             if (translated == null) {
                 logger("CẢNH BÁO: Batch dịch thất bại -> Hán-Việt cho phần còn lại")
-                fillFallback(resolved, plan.misses)
-                fallbackPositions += plan.misses.sumOf { it.positions.size }
+                fallbackPositions += fillFallback(resolved, plan.misses)
                 break
             }
 
             for (k in group.indices) {
                 val miss = group[k]
-                val item = translated[k]
+                val item = translated.getOrNull(k) ?: ""
                 if (item.isBlank()) {
                     fallbackPositions += miss.positions.size
                     val fallback = TextProcessor.toSinoVietnamese(miss.text)
@@ -159,13 +158,18 @@ object ChapterTranslationPipeline {
         return Triple(finish(resolved), false, fallbackPositions)
     }
 
-    private fun fillFallback(resolved: MutableList<String?>, misses: List<ChunkResolver.Miss>) {
+    private fun fillFallback(resolved: MutableList<String?>, misses: List<ChunkResolver.Miss>): Int {
+        var count = 0
         for (miss in misses) {
             val fallback = TextProcessor.toSinoVietnamese(miss.text)
             for (position in miss.positions) {
-                if (resolved[position] == null) resolved[position] = fallback
+                if (resolved[position] == null) {
+                    resolved[position] = fallback
+                    count++
+                }
             }
         }
+        return count
     }
 
     private fun finish(resolved: List<String?>): List<String> = resolved.map { it ?: "" }

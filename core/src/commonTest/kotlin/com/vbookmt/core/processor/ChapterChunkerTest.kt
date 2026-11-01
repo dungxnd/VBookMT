@@ -91,4 +91,15 @@ class ChapterChunkerTest {
         assertEquals(word, plan.chunks.joinToString("") { it.text })
         assertTrue(plan.chunks.isNotEmpty())
     }
+
+    @Test
+    fun sentenceTerminatorWithClosingQuoteKeepsQuoteWithTerminator() {
+        val sentenceWithQuote = "他微笑着说道：“这就是真正的力量，无与伦比。”"
+        val nextSentence = "周围的弟子们纷纷倒吸了一口凉气，心中震撼不已。"
+        val paragraph = sentenceWithQuote.repeat(7) + nextSentence
+        val plan = planOf(paragraph)
+        assertTrue(plan.chunks.size >= 2)
+        assertTrue(plan.chunks.first().text.endsWith("。”"))
+        assertTrue(!plan.chunks[1].text.startsWith("”"))
+    }
 }

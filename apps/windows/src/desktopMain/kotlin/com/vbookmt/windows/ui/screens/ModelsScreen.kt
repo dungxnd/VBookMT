@@ -61,7 +61,9 @@ import kotlinx.coroutines.launch
 fun ModelsScreen() {
     val activeModelId by WindowsState.activeModel.collectAsState()
     val scroll = rememberScrollState()
-    var downloadingModelId by remember { mutableStateOf<String?>(null) }
+    val downloadState by WindowsModelDownloader.downloadState.collectAsState()
+    val downloadingModelId = downloadState?.takeIf { it.isDownloading }?.modelId
+    val anyDownloading = downloadState?.isDownloading == true
 
     Column(modifier = Modifier.fillMaxWidth().verticalScroll(scroll)) {
         PageHeader(
@@ -75,9 +77,8 @@ fun ModelsScreen() {
                     model = model,
                     isActive = model.id == activeModelId,
                     downloadingModelId = downloadingModelId,
-                    onDownloadingChange = { isDownloading ->
-                        downloadingModelId = if (isDownloading) model.id else null
-                    },
+                    downloadPercent = if (downloadingModelId == model.id) downloadState?.percent else null,
+                    anyDownloading = anyDownloading,
                 )
             }
 
@@ -106,22 +107,21 @@ private fun ModelRow(
     model: ModelSpec,
     isActive: Boolean,
     downloadingModelId: String? = null,
-    onDownloadingChange: (Boolean) -> Unit = {},
+    downloadPercent: Int? = null,
+    anyDownloading: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
     val downloading = downloadingModelId == model.id
-    val anyDownloading = downloadingModelId != null
 
     // Which precision this row is set to. Seeded from what is actually on disk so a model installed at
     // Q8 does not read as "not installed" because the picker defaults to FP16.
     var variant by remember(model.id) {
         mutableStateOf(WindowsModelDownloader.installedVariant(model))
     }
-    var installed by remember(model.id) {
+    var installed by remember(model.id, variant, downloadingModelId) {
         mutableStateOf(WindowsModelDownloader.isModelReady(model, variant))
     }
     var switching by remember(model.id) { mutableStateOf(false) }
-    var progress by remember(model.id) { mutableStateOf<WindowsModelDownloader.DownloadProgress?>(null) }
 
     Panel {
         Row(
@@ -154,7 +154,7 @@ private fun ModelRow(
                     Caption("Giấy phép: ${model.license}")
                 }
 
-                // Precision picker. Every artifact publishes fp16 / q16 / q8 as separate folder builds,
+                // Precision picker. Every artifact publishes fp16 / q8 as separate folder builds,
                 // so this changes both what gets downloaded and what runs. The phone has had this since
                 // the variants shipped; desktop did not, which meant a desktop user silently got FP16
                 // with no way to choose — the largest download of the three.
@@ -196,13 +196,13 @@ private fun ModelRow(
                 downloading -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         LinearProgressIndicator(
-                            progress = { (progress?.percent ?: 0) / 100f },
+                            progress = { (downloadPercent ?: 0) / 100f },
                             modifier = Modifier.width(96.dp).height(4.dp),
                             color = VBookTheme.palette.accent,
                             trackColor = VBookTheme.palette.surfaceMuted,
                         )
                         Spacer(Modifier.width(VBookTheme.spacing.sm))
-                        Caption("${progress?.percent ?: 0}%")
+                        Caption("${downloadPercent ?: 0}%")
                     }
                 }
 
@@ -210,23 +210,9 @@ private fun ModelRow(
                     Button(
                         onClick = {
                             if (anyDownloading) return@Button
-                            onDownloadingChange(true)
-                            scope.launch {
-                                // Pass the picked precision: the three builds are separate folder
-                                // downloads, so omitting it would silently always fetch FP16 and make
-                                // the chip row above cosmetic.
-                                val ok = WindowsModelDownloader.downloadModel(model, variant) { p ->
-                                    progress = p
-                                }
-                                onDownloadingChange(false)
-                                progress = null
+                            WindowsModelDownloader.startDownload(model, variant) { ok ->
                                 if (ok) {
                                     installed = true
-                                    // Downloading a model the user asked for is an implicit "use it".
-                                    WindowsTranslator.init(
-                                        model.id,
-                                        WindowsState.savedThreads.value,
-                                    )
                                 }
                             }
                         },

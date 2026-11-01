@@ -1,6 +1,8 @@
 package com.vbookmt.core.processor
 
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * Shared durable tier for the translation memo: an append-only journal replayed at startup.
@@ -66,19 +68,29 @@ class DurableCacheStore(
             return emptyList()
         }
 
-        val lines = file.readLines()
-        if (lines.isEmpty() || lines[0].trim() != TranslationCacheJournal.HEADER) {
+        val restored = ArrayList<Pair<String, String>>()
+        var validHeader = false
+
+        file.bufferedReader().useLines { lines ->
+            val iter = lines.iterator()
+            if (iter.hasNext()) {
+                val first = iter.next().trim()
+                if (first == TranslationCacheJournal.HEADER) {
+                    validHeader = true
+                    while (iter.hasNext()) {
+                        val line = iter.next()
+                        if (line.isBlank()) continue
+                        val entry = TranslationCacheJournal.decode(line) ?: break
+                        restored.add(entry)
+                    }
+                }
+            }
+        }
+
+        if (!validHeader) {
             file.delete()
             file.writeText(TranslationCacheJournal.HEADER + "\n")
             return emptyList()
-        }
-
-        val restored = ArrayList<Pair<String, String>>(lines.size)
-        for (i in 1 until lines.size) {
-            val line = lines[i]
-            if (line.isBlank()) continue
-            val entry = TranslationCacheJournal.decode(line) ?: break
-            restored.add(entry)
         }
         return restored
     }
@@ -146,9 +158,20 @@ class DurableCacheStore(
                 text.append(TranslationCacheJournal.encode(key, value)).append('\n')
             }
             temp.writeText(text.toString(), Charsets.UTF_8)
-            if (!temp.renameTo(file)) {
-                file.delete()
-                temp.renameTo(file)
+            try {
+                Files.move(
+                    temp.toPath(),
+                    file.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE
+                )
+            } catch (_: Exception) {
+                // Fallback if the underlying filesystem does not support atomic move
+                Files.move(
+                    temp.toPath(),
+                    file.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+                )
             }
             val afterBytes = file.length()
             onLog("Nén nhật ký cache: $beforeBytes -> $afterBytes bytes (${entries.size} mục)")

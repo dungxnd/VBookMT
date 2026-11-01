@@ -2,11 +2,46 @@
 
 Tất cả các thay đổi đáng chú ý của dự án **VBookMT** sẽ được ghi chép tại đây theo định dạng [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v1.2.1] - 2026-11-01
+
+### Thêm mới
+- **Tự động tiếp tục tải mô hình (HTTP Range 206)**: Hỗ trợ tự động tải tiếp dữ liệu mô hình khi kết nối mạng bị gián đoạn hoặc thoát ứng dụng giữa chừng.
+- **Tải ngầm độc lập với giao diện**: Tiến trình tải mô hình tiếp tục chạy nền ổn định khi chuyển giữa các tab (Tổng quan / Mô hình / Cài đặt) hoặc chuyển sang app khác.
+- **Cập nhật trạng thái thông báo**: Hiển thị chi tiết trạng thái hoạt động và tiến trình xử lý của máy chủ trên thanh thông báo Android.
+
+### Thay đổi
+- **Rút gọn tùy chọn mô hình**: Chỉ giữ 2 mức lượng tử hóa chuẩn FP16 (chất lượng cao nhất) và Q8 (nhẹ, tiết kiệm RAM), loại bỏ biến thể Q16 kém tối ưu trên CPU.
+- **Đồng bộ thời gian chờ**: Thống nhất hạn mức thời gian dịch của máy chủ (110 giây) và tiện ích mở rộng (120 giây), đảm bảo máy chủ luôn kịp phản hồi lỗi rõ ràng thay vì để máy khách tự ý ngắt kết nối.
+- **Tối ưu trải nghiệm thông báo**: Tắt rung và âm thanh lặp lại khi dịch vụ nền cập nhật tiến trình trên Android.
+- **Giới hạn số bước tạo từ theo độ dài**: Tự động điều chỉnh ngưỡng sinh từ tối đa theo độ dài thực tế từng câu để tránh bị treo hoặc lặp từ vô tận.
+- **Tối ưu hóa thời gian build CI & Release**: Bổ sung bộ đệm cache 2 lớp (DLL đã biên dịch & thư viện phụ thuộc) trên Windows, khắc phục lỗi tham số PowerShell giúp rút ngắn thời gian build xuống ~3 phút.
+
+### Sửa lỗi
+- **Kết nối Tiện ích vBook & Máy chủ**:
+  - Khắc phục lỗi tính năng tự động dò tìm máy chủ LAN (`auto_discover`) do phản hồi định danh `GET /` không khớp với bộ lọc tiện ích.
+  - Sửa lỗi giải mã Protobuf Varint 64-bit trong `wire.js` khi đọc giá trị nguyên âm (loại bỏ lỗi `Varint overflow` khi nhận báo cáo trạng thái `HealthReport`).
+  - Tự động điền cổng mặc định `:8765` khi người dùng nhập địa chỉ IP thủ công mà không gõ cổng (ví dụ: `192.168.1.50`).
+  - Xử lý an toàn khi giải mã thông báo lỗi gRPC trên tiêu đề phản hồi, tránh lỗi crash do chuỗi URI không hợp lệ.
+  - Tăng khả năng chịu lỗi và thời gian chờ khi mô hình đang nạp (`UNAVAILABLE`), giúp tiện ích tự động kết nối thành công khi vừa mở app.
+  - Tự động xóa bộ nhớ đệm IP dò tìm LAN khi kết nối thất bại để tiện ích chủ động tìm lại IP mới nếu máy tính bị đổi địa chỉ Wi-Fi.
+  - Bổ sung cấu hình CORS `Access-Control-Expose-Headers` cho các tiêu đề phản hồi `grpc-status` và `grpc-message`.
+- **Windows**:
+  - Sửa lỗi đường dẫn thư viện native khiến ứng dụng báo "Mô hình chưa sẵn sàng" sau khi tải mô hình.
+  - Thêm cơ chế tự động thử lại khi khởi động lại máy chủ (sau khi bật/tắt LAN), tránh xung đột cổng socket (`BindException: Address already in use`).
+  - Loại bỏ lệnh khởi tạo mô hình trùng lặp trong giao diện Mô hình sau khi tải xong, tránh xung đột nạp song song.
+- **Android**:
+  - Khắc phục lỗi máy chủ không nạp mô hình mới khi chuyển đổi trong danh sách.
+  - Đồng bộ lại trạng thái nút bấm trên màn hình khi dừng máy chủ từ thanh thông báo.
+- **Khác**:
+  - Sửa lỗi tải tệp thất bại khi máy chủ chuyển hướng liên kết HTTP 307.
+  - Khắc phục hiện tượng tăng bộ nhớ khi dịch liên tục nhiều chương.
+  - Ghi nhớ cấu hình tối ưu phần cứng sau khi khởi động lại ứng dụng.
+
 ## [v1.2.0] - 2026-11-01
 
 ### Thêm mới
 - **Tiện ích vBook đồng nhất**: Gộp thành một bản tiện ích duy nhất cho mọi thiết bị, tự động tìm và kết nối máy chủ dịch qua mạng Wi-Fi nội bộ, tự chuyển sang bộ dịch dự phòng khi máy chủ chưa bật.
-- **Tùy chọn dung lượng mô hình**: Bổ sung lựa chọn các mức dung lượng (FP16, Q16, Q8) ngay trên màn hình chọn mô hình cho cả điện thoại và máy tính, giúp tiết kiệm bộ nhớ máy và mạng.
+- **Tùy chọn dung lượng mô hình**: Bổ sung lựa chọn các mức dung lượng (FP16, Q8) ngay trên màn hình chọn mô hình cho cả điện thoại và máy tính, giúp tiết kiệm bộ nhớ máy và mạng.
 - **Giao diện máy tính mới**: Đồng bộ bố cục 3 mục (Tổng quan, Mô hình, Cài đặt) tương tự như trên điện thoại; bổ sung khu vực Dịch thử nghiệm nhanh để kiểm tra kết quả ngay trong app; cung cấp gói cài đặt Windows hoàn chỉnh (.msi).
 
 ### Thay đổi

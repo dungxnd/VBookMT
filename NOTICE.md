@@ -46,7 +46,7 @@ Dự án **VBookMT** được phát triển bởi **dungxnd** và tích hợp c�
 ### ONNX Runtime
 * **Tổ chức**: [Microsoft](https://github.com/microsoft/onnxruntime)
 * **Giấy phép**: [MIT License](https://github.com/microsoft/onnxruntime/blob/main/LICENSE)
-* **Mô tả**: Engine suy luận **duy nhất** của VBookMT, dùng cho các mô hình ONNX (FP16 / Q16 / Q8, từ
+* **Mô tả**: Engine suy luận **duy nhất** của VBookMT, dùng cho các mô hình ONNX (FP16 / Q8, từ
   vựng 6k). Trên Android ứng dụng yêu cầu Qualcomm QNN (backend NPU/HTP); máy không đáp ứng sẽ tự lùi
   về CPU và lý do được ghi ở `/health`. Trên Windows chạy CPU vì gói `onnxruntime` tiêu chuẩn không kèm
   provider GPU.

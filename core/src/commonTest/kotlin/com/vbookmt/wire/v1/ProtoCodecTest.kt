@@ -149,7 +149,7 @@ class ProtoCodecTest {
             cacheHitPct = 28.235,
             cacheDiskBytes = 1048576,
             cacheDiskRestored = 1200,
-            pssMb = 420,
+            pssMb = -1,
             jvmHeapMb = 58
         )
         val bytes = ProtoCodec.encodeHealthReport(report)
