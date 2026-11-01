@@ -17,6 +17,13 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
+        <!-- `libOpenCL.so` was declared here for QNN's GPU backend, which dlopens the absolute path
+             `/vendor/lib64/libOpenCL.so` and is blocked by Android's linker namespace unless the
+             library is declared. QNN is no longer bundled (its runtime was 180 MB of a 218 MB APK
+             and its GPU path measured slower than CPU), so nothing in the app loads OpenCL and the
+             declaration is gone with it. Re-add it alongside `onnxruntime-android-qnn` if that
+             comes back. -->
+
         <activity
             android:name=".MainActivity"
             android:exported="true">

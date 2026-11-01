@@ -15,44 +15,28 @@ permissions:
   contents: read
 
 jobs:
-  validate:
-    name: Validate scripts & extension artifact
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      # plugin.zip is committed because it is what users install, but it is generated. Nothing used
-      # to rebuild or verify it, so a source change could ship the previous defaults inside the zip
-      # (v1.0.0 shipped a stale 15 s timeout that way). This also checks that plugin.json and
-      # src/config.js agree about every setting default.
-      - name: Verify committed extension artifact
-        run: python scripts/verify_extension.py
-
-      - name: Test Extension Packaging
-        run: |
-          python scripts/package_extension.py build/test-extension.zip
-          test -f build/test-extension.zip
-
-      - name: Test Release Notes Generation
-        run: |
-          python scripts/generate_release_notes.py v1.0.0 build/test-notes.md
-          test -f build/test-notes.md
-
-  build-core:
-    name: Build Core & KMP Tests
+  check:
+    name: Lint, Test & Compile
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Validate extension artifact integrity and release notes generator
+      - name: Validate scripts & extension artifact
+        run: |
+          python scripts/verify_extension.py
+          python scripts/package_extension.py build/test-extension.zip
+          test -f build/test-extension.zip
+          python scripts/generate_release_notes.py v1.0.0 build/test-notes.md
+          test -f build/test-notes.md
+
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
@@ -64,16 +48,15 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "9.8.2"
 
-      - name: Build Core & Run JVM Tests
-        run: gradle :core:assemble :core:jvmTest
+      # Single Gradle daemon compiles core, tests, Android debug, and Windows Compose desktop
+      - name: Build Core, Tests & Multiplatform Hosts
+        run: ./gradlew :core:assemble :core:jvmTest :apps:android:compileDebugKotlin :apps:windows:compileKotlinDesktop
 
-  compile-android:
-    name: Compile Android (Kotlin)
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
+  native-windows:
+    name: Windows Native & Desktop Tests
+    runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -84,17 +67,32 @@ jobs:
           distribution: "temurin"
           java-version: "21"
 
-      - name: Accept Android SDK Licenses
-        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+      - name: Cache native dependencies
+        id: cache-deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/native-win/sentencepiece
+            build/native-win/build-spm
+          key: win-deps-${{ hashFiles('scripts/build_windows_native.ps1') }}
+
+      - name: Build vbookmt_native.dll
+        run: |
+          $buildArgs = @()
+          if ('${{ steps.cache-deps.outputs.cache-hit }}' -eq 'true') {
+              $buildArgs += '-SkipDeps'
+          }
+          ./scripts/build_windows_native.ps1 @buildArgs
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "9.8.2"
 
-      # Kotlin only, on purpose: no NDK, no prebuilt CTranslate2, no ten-minute native build. This is
-      # the check that catches the class of failure which used to surface only when a release tag was
-      # pushed - a stale API reference in the app module, an unresolved import, a broken Compose
-      # screen. `:core` compiles fine in that situation, which is why the core job alone missed it.
-      - name: Compile debug sources
-        run: gradle :apps:android:compileDebugKotlin
+      - name: Run Desktop Tests
+        run: .\gradlew.bat :apps:windows:desktopTest
+
+      - name: Upload native DLLs
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-native-dlls
+          path: apps/windows/resources-packaged/windows/*.dll
+          if-no-files-found: error

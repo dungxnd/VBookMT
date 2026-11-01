@@ -1,81 +1,77 @@
 # VBookMT
 
-Bộ dịch truyện Trung $\rightarrow$ Việt offline cho ứng dụng **vBook**, sử dụng mô hình MarianMT (HachimiMT, MoxhiMT) chạy cục bộ qua CTranslate2.
-
-## ✨ Điểm chính
-- **Dịch offline 100%**: Không tốn API key, không cần mạng internet.
-- **Chuẩn văn phong convert**: Giữ đúng đại từ nhân xưng (*ta, ngươi, hắn, nàng, huynh, đệ*), không bị lẫn ngôi.
-- **Tốc độ nhanh**: Nén INT8 tối ưu (~1,600+ ký tự/giây, tầm 1-2 giây một chương).
-- **Fallback an toàn**: Nếu chưa bật server VBookMT, extension tự động chuyển sang QuickTranslator để việc đọc không bị ngắt quãng.
-- **Chạy nền ổn định**: App Android chạy dạng Foreground Service kèm thông báo, không lo bị hệ điều hành tắt ngầm.
+Bộ công cụ dịch truyện Trung $\rightarrow$ Việt offline cho ứng dụng **vBook**, sử dụng mô hình MarianMT (HachimiMT, MoxhiMT).
 
 ---
 
-## 🚀 Bước 1: Cài đặt app & khởi chạy server
+## 🚀 Hướng dẫn cài đặt & Sử dụng
 
-Extension chỉ là "ống dẫn": nó gửi yêu cầu dịch về máy chủ nội bộ tại `http://127.0.0.1:8765/translate`. Vì vậy **cài app và bật server trước**, rồi mới thêm extension.
+### Bước 1: Cài đặt App máy chủ dịch (VBookMT)
 
-### 📱 Trên Android
-1. Cài file `VBookMT-Android.apk` từ trang [Releases](https://github.com/DungxND/VBookMT/releases).
-2. Mở app **VBookMT**, cấp quyền thông báo.
-3. Model mặc định **HachimiMT-60-QT** đã được cấu hình sẵn (có thể tải thêm **MoxhiMT-30-QT** nếu muốn bản nhẹ) — model được chọn **trong app**, không chọn ở extension.
-4. Bật switch khởi động server.
+Bạn cần cài đặt ứng dụng VBookMT trên điện thoại hoặc máy tính để chạy mô hình AI dịch nền:
 
-### 💻 Trên Windows
-1. Tải và giải nén `VBookMT-Windows-x64.zip` từ trang [Releases](https://github.com/DungxND/VBookMT/releases).
-2. Chạy server:
-   ```powershell
-   ./vbookmt-server.exe --port 8765 --model models/hachimi60_ct2
-   ```
+* **Trên điện thoại Android**:
+  1. Tải tệp cài đặt `VBookMT-Android.apk` từ mục [Releases](https://github.com/DungxND/VBookMT/releases).
+  2. Mở app, chọn mô hình dịch mong muốn và nhấn **Tải về**.
+  3. Gạt nút **Bật dịch offline** (ứng dụng sẽ chạy ngầm và mở cổng dịch nội bộ `8765`).
 
-Kiểm tra nhanh: mở `http://127.0.0.1:8765/health` — server đã sẵn sàng khi thấy `"ready":true`.
+* **Trên máy tính Windows**:
+  1. Tải và cài đặt `VBookMT-1.2.0.msi` từ mục [Releases](https://github.com/DungxND/VBookMT/releases).
+  2. Mở app, tải mô hình dịch và nhấn **Bật máy chủ**.
+  3. *(Tùy chọn)*: Bật **"Cho phép thiết bị khác kết nối & dò tìm qua LAN"** nếu bạn muốn dùng máy tính để dịch cho vBook trên điện thoại cùng mạng Wi-Fi.
 
 ---
 
-## 🔌 Bước 2: Cài đặt Extension vào vBook
+### Bước 2: Cài đặt Tiện ích mở rộng vào vBook
 
-### Cách 1: Thêm link nguồn trong vBook (tiện nhất)
-1. Mở **vBook** $\rightarrow$ **Cài đặt** $\rightarrow$ **Tiện ích mở rộng**.
-2. Nhấn biểu tượng dấu **+** (Thêm nguồn).
-3. Dán URL sau rồi bấm Thêm:
-   ```text
-   https://raw.githubusercontent.com/DungxND/VBookMT/main/plugin.json
-   ```
-4. Chọn cài đặt **VBookMT (Offline AI)**.
+Sau khi đã bật app VBookMT, bạn cài tiện ích vào vBook để đọc truyện:
 
-### Cách 2: Cài bằng file ZIP
-1. Tải file [`plugin.zip`](https://raw.githubusercontent.com/DungxND/VBookMT/main/vbook-extension/plugin.zip) từ repo hoặc mục [Releases](https://github.com/DungxND/VBookMT/releases).
-2. Vào **vBook** $\rightarrow$ **Tiện ích mở rộng** $\rightarrow$ chọn **Cài đặt từ tệp (ZIP)**.
+* **Cách 1: Thêm link nguồn trực tiếp trong vBook (Khuyên dùng)**
+  1. Mở **vBook** $\rightarrow$ **Cài đặt** $\rightarrow$ **Tiện ích mở rộng**.
+  2. Nhấn nút **+** (Thêm nguồn) và dán link:
+     ```text
+     https://raw.githubusercontent.com/DungxND/VBookMT/main/plugin.json
+     ```
+  3. Nhấn cài đặt tiện ích **VBookMT**.
 
-## Tinh chỉnh
-
-### Muốn nhanh hơn
-Trong app có thẻ **Hiệu năng** với nút **“Đo & tối ưu cho máy này”**. App sẽ thử vài cấu hình trên chính máy (khoảng 8–12 giây), chọn cái nhanh nhất và **ghi nhớ**.
-
-### Dành cho người muốn tinh chỉnh tay (nâng cao)
-Ai muốn vọc thì server vẫn mở `GET /health` và `POST /config`; giá trị đặt tay cũng được ghi nhớ như khi bấm nút.
-
-```powershell
-# Xem cấu hình hiện tại + thống kê bộ nhớ đệm
-curl.exe -s http://127.0.0.1:8765/health
-
-# Đổi kiểu tính toán (mỗi lần đổi sẽ nạp lại model ~1 giây)
-curl.exe -s -X POST http://127.0.0.1:8765/config -H "Content-Type: application/json" -d "{\"computeType\":\"int8\"}"
-
-# Đổi số luồng và cách gom batch
-curl.exe -s -X POST http://127.0.0.1:8765/config -H "Content-Type: application/json" -d "{\"threads\":6,\"maxBatch\":16,\"batchType\":\"tokens\"}"
-
-# Xoá cache / tắt cache để đo chênh lệch
-curl.exe -s -X POST http://127.0.0.1:8765/config -H "Content-Type: application/json" -d "{\"clearCache\":true}"
-curl.exe -s -X POST http://127.0.0.1:8765/config -H "Content-Type: application/json" -d "{\"cacheEnabled\":false}"
-```
-
-**Vì sao phải đo trên máy thay vì chọn sẵn?** Trên CPU x86 không có VNNI (đo trên Ryzen 7 5800H), `int8` và `int8_float32` gần như trùng nhau (203 vs 205 ms, đầu ra giống nhau 100%), còn `float32` chậm hơn 46% mà chỉ hơn ~0,7% độ tương đồng. Trên ARMv8.2 có `dotprod`/`i8mm` thì `int8` mới thực sự có cửa nhanh hơn — nên app để nút bấm tự đo, kết quả phụ thuộc máy chứ không thể đoán.
+* **Cách 2: Cài từ tệp ZIP**
+  1. Tải tệp [`vbookmt-extension.zip`](https://raw.githubusercontent.com/DungxND/VBookMT/main/vbook-extension/plugin.zip) từ [Releases](https://github.com/DungxND/VBookMT/releases).
+  2. Mở **vBook** $\rightarrow$ **Tiện ích mở rộng** $\rightarrow$ chọn **Cài đặt từ tệp (ZIP)**.
 
 ---
 
-## 📜 Tác quyền & Ghi nhận (Credits)
+## 🤖 Các mô hình hỗ trợ
 
-- **HachimiMT-60-QT** & **HachimiMT-40-QT** bởi **[ngocdang83](https://huggingface.co/ngocdang83)** ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)).
-- **MoxhiMT-30-QT** bởi **[DanVP](https://huggingface.co/DanVP)** ([CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)).
-- **vBook Ecosystem** bởi **[Darkrai9x](https://github.com/Darkrai9x)**.
+| Mô hình | Kiểu chạy | Dung lượng | Tác giả | Đặc tính |
+| :--- | :--- | :--- | :--- | :--- |
+| **HachimiMT 60 QT** | ONNX | 124–205 MB | ngocdang83 (ONNX: DungxND) | Mặc định — Chất lượng dịch cao nhất, chuẩn phong cách convert kiếm hiệp/tiên hiệp |
+| **MoxhiMT 30 QT** | ONNX | 88–142 MB | DanVP (ONNX: DungxND) | Siêu nhẹ — Tốc độ dịch nhanh, tiết kiệm RAM cho máy cấu hình thấp |
+
+Mỗi mô hình có **ba mức lượng tử hoá**, chọn ngay trong app trước khi tải:
+
+| Mức | HachimiMT 60 | MoxhiMT 30 | Chất lượng (chrF) | Ghi chú |
+| :--- | ---: | ---: | ---: | :--- |
+| **FP16** | 205 MB | 142 MB | 100.00 | Cao nhất, mặc định |
+| **Q16** | 167 MB | 121 MB | 98.0 – 100.00 | Gần bằng FP16, nhẹ hơn |
+| **Q8** | 124 MB | 88 MB | 96.0 – 96.25 | Nhẹ nhất, nhanh nhất, ít RAM nhất (−50 MB) |
+
+> chrF đo trên Snapdragon 8 Gen 3, so với chính bản fp32 của từng mô hình (100 = giống hệt).
+
+> **Về ONNX:** đây là engine **duy nhất** — CTranslate2 đã được loại bỏ hoàn toàn khỏi ứng dụng
+> (không còn thư viện native, không còn trong APK, giảm ~48 MB).
+> Trên Android app yêu cầu **Qualcomm QNN** (backend NPU/HTP); máy không đáp ứng sẽ **tự lùi về CPU**
+> và lý do được ghi rõ ở `/health`, không im lặng đổi hành vi. Trên Windows app chạy **CPU**: gói
+> `onnxruntime` tiêu chuẩn không kèm provider GPU (DirectML/WinML cần một cầu nối C++/.NET chưa có
+> trong bản build này).
+
+
+---
+
+## 📜 Bản quyền & Ghi nhận (Credits)
+
+- **Tác giả dự án & Tiện ích**: DungxND
+- **Mô hình dịch thuật**:
+  - **HachimiMT-60-QT** bởi **[ngocdang83](https://huggingface.co/ngocdang83)** ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)).
+  - **MoxhiMT-30-QT** bởi **[DanVP](https://huggingface.co/DanVP)** ([CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)).
+  - Các bản port và tối ưu hóa **ONNX 6k** (FP16 / Q16 / Q8) lưu trữ tại Hugging Face của **[dungxnd](https://huggingface.co/dungxnd)**.
+- **Hệ sinh thái vBook** bởi **[Darkrai9x](https://github.com/Darkrai9x)**.

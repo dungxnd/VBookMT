@@ -33,12 +33,10 @@ data class TranslateConfig(
      */
     val chunkChars: Int = 0,
     /**
-     * CTranslate2 compute type: one of `int8`, `int8_float32`, `int8_float16`, `int8_bfloat16`,
-     * `int16`, `float32`, `float16`, `bfloat16`, `auto`, `default` ("" = leave unchanged).
-     *
-     * This is genuinely device-dependent and cannot be settled on desktop: on an x86 CPU without
-     * VNNI (measured: Zen 3) `int8` and `int8_float32` are indistinguishable, while ARMv8.2 cores
-     * with dotprod/i8mm reach a real int8 kernel. Changing it reloads the model.
+     * **Inert.** This used to select CTranslate2's arithmetic (`int8`, `int8_float32`, `int16`, …).
+     * ONNX has no such runtime knob — precision is a property of the downloaded artifact (fp16 / q8 /
+     * q16) — so the field is accepted for wire compatibility and echoed back in the config report, but
+     * changing it does nothing. Only [threads] triggers an engine reload.
      */
     val computeType: String = "",
     /** Drop every cached chunk translation (free and safe; only re-reads get slower afterwards). */
@@ -53,13 +51,4 @@ data class TranslateResponse(
     val translatedText: String,
     val error: String? = null,
     val elapsedMs: Long = 0
-)
-
-@Serializable
-data class ModelInfo(
-    val id: String,
-    val name: String,
-    val description: String,
-    val sizeMb: Int,
-    val isInstalled: Boolean = false
 )

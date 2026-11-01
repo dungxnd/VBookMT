@@ -99,6 +99,24 @@ class TranslationCache(
         misses = 0
     }
 
+    /**
+     * Drops one entry if present, leaving every other entry and all counters untouched.
+     *
+     * Exists so a caller can undo a specific insertion without the sledgehammer of [clear]. The
+     * benchmark needs exactly this: it translates sample paragraphs through the normal path, which
+     * memoises them, and they can never be hit again because they are not a chapter anyone opens.
+     * Removing the blanket clear that used to follow the sweep is what makes this necessary — the fix
+     * for "the benchmark wipes the reader's cache" must not be "the benchmark pollutes it instead".
+     *
+     * @return true when the key was present and removed.
+     */
+    fun remove(key: String): Boolean {
+        val node = index.remove(key) ?: return false
+        unlink(node)
+        payloadChars -= (node.key.length + node.value.length)
+        return true
+    }
+
     fun stats(): Stats = Stats(
         entries = index.size,
         payloadChars = payloadChars,

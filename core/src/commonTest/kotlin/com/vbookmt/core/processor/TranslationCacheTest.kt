@@ -2,6 +2,7 @@ package com.vbookmt.core.processor
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -164,5 +165,56 @@ class TranslationCacheTest {
             TranslationCache.key("ab", 1, "c"),
             TranslationCache.key("a", 1, "bc"),
         )
+    }
+
+    @Test
+    fun removeDropsOnlyTheNamedEntry() {
+        val cache = TranslationCache()
+        cache.put("keep-a", "A")
+        cache.put("drop", "B")
+        cache.put("keep-c", "C")
+
+        assertTrue(cache.remove("drop"))
+
+        assertEquals(2, cache.stats().entries)
+        assertNull(cache.get("drop"), "removed key must miss")
+        assertEquals("A", cache.get("keep-a"))
+        assertEquals("C", cache.get("keep-c"))
+    }
+
+    @Test
+    fun removeReportsWhetherItFoundTheKey() {
+        val cache = TranslationCache()
+        cache.put("present", "v")
+        assertTrue(cache.remove("present"))
+        // A second removal must be a no-op rather than corrupting the payload accounting.
+        assertFalse(cache.remove("present"))
+        assertEquals(0, cache.stats().entries)
+        assertEquals(0L, cache.stats().payloadChars)
+    }
+
+    @Test
+    fun removeKeepsRecencyOfSurvivingEntries() {
+        val cache = TranslationCache()
+        cache.put("oldest", "1")
+        cache.put("middle", "2")
+        cache.put("newest", "3")
+        cache.remove("middle")
+
+        // Snapshot is most-recent-first; removing from the middle must not reorder the rest.
+        assertEquals(listOf("newest", "oldest"), cache.snapshot().map { it.first })
+        assertEquals("1", cache.get("oldest"), "surviving entry must still be readable")
+    }
+
+    @Test
+    fun removeReleasesPayloadBudget() {
+        val cache = TranslationCache(maxPayloadChars = 100)
+        val key = "k"
+        val value = "v".repeat(50)
+        cache.put(key, value)
+        assertEquals((key.length + value.length).toLong(), cache.stats().payloadChars)
+
+        cache.remove(key)
+        assertEquals(0L, cache.stats().payloadChars, "removal must not leak payloadChars")
     }
 }

@@ -20,8 +20,20 @@ object ChapterChunker {
     /** Default chunk length in characters, measured on device (see class docs). */
     const val DEFAULT_CHUNK_CHARS = 150
 
-    /** Default SentencePiece budget per chunk, comfortably under the model's 512 positions. */
-    const val DEFAULT_TOKEN_BUDGET = 440
+    /** Below this, chunks are too short to carry context; above it, attention dominates. */
+    const val MIN_CHUNK_CHARS = 40
+    const val MAX_CHUNK_CHARS = 400
+
+    /**
+     * Default SentencePiece budget per chunk. This is the single source of truth: the app layers read
+     * it from here rather than restating 280, so the chunker and the engine cannot disagree.
+     *
+     * The decoder has 448 positions and Vietnamese costs ~1.34 output pieces per source token, so a
+     * 440-token budget truncated ~48% of long chunks mid-sentence (measured: 440 → 48%, 340 → 16%,
+     * 300 → 9%, 280 → 4%, 240 → 2%). Throughput does not suffer for the smaller budget (280: 1640
+     * chars/s vs 440: 1521), and a shorter chunk decodes sooner, which is what the reader waits for.
+     */
+    const val DEFAULT_TOKEN_BUDGET = 280
 
     /** Don't look for a sentence boundary until at least this much text is buffered. */
     private const val MIN_SOFT_SPLIT_CHARS = 110

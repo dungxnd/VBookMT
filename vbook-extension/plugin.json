@@ -1,10 +1,10 @@
 {
   "metadata": {
-    "name": "VBookMT (Offline AI)",
-    "author": "VBookMT (Models: ngocdang83 & DanVP)",
-    "version": 2,
+    "name": "VBookMT",
+    "author": "DungxND",
+    "version": 4,
     "source": "https://github.com/DungxND/VBookMT",
-    "description": "Dịch truyện Trung offline bằng model AI Hachimi & Moxhi, chuẩn xưng hô convert, không cần mạng.",
+    "description": "Dịch truyện qua app VBookMT chạy nền trên điện thoại hoặc máy tính.",
     "locale": "vi_VN",
     "language": "javascript",
     "regexp": "",
@@ -20,38 +20,6 @@
   "config": {
     "support_auto_detect": true,
     "max_line": 250,
-    "max_length": 20000,
-    "server_url": {
-      "title": "Địa chỉ máy chủ VBookMT (Local Server)",
-      "subtitle": "Mặc định: http://127.0.0.1:8765 (không cần đổi nếu chạy app trên cùng máy)",
-      "mode": "input",
-      "format": "text",
-      "default": "http://127.0.0.1:8765"
-    },
-    "fallback_qt": {
-      "title": "Tự động dùng QuickTranslator nếu server tắt",
-      "subtitle": "Nếu chưa bật app VBookMT, tự động dùng bộ dịch QT có sẵn của vBook để không gián đoạn đọc",
-      "mode": "toggle",
-      "default": true
-    },
-    "notify_fallback": {
-      "title": "Thông báo khi dùng QuickTranslator",
-      "subtitle": "Thêm tiền tố [QT Fallback] để nhận biết máy chủ AI VBookMT đang tắt",
-      "mode": "toggle",
-      "default": false
-    },
-    "timeout_seconds": {
-      "title": "Thời gian chờ tối đa (giây)",
-      "subtitle": "Thời gian chờ server phản hồi trước khi thử lại hoặc fallback (5 - 120s). Nên lớn hơn timeout phía server (110s)",
-      "mode": "input",
-      "format": "number",
-      "default": 120
-    },
-    "clean_crawler_artifacts": {
-      "title": "Lọc số bình luận rác cuối đoạn (Crawler artifacts)",
-      "subtitle": "Tự động xóa số lượng bình luận dính ở đuôi đoạn văn khi cào từ web truyện",
-      "mode": "toggle",
-      "default": true
-    }
+    "max_length": 20000
   }
 }

@@ -1,17 +1,17 @@
 {
   "metadata": {
-    "author": "VBookMT",
-    "description": "Kho tiện ích dịch offline cho vBook"
+    "author": "DungxND",
+    "description": "Kho tiện ích dịch truyện cho vBook"
   },
   "data": [
     {
-      "name": "VBookMT (Offline AI)",
-      "author": "VBookMT",
+      "name": "VBookMT",
+      "author": "DungxND",
       "path": "https://raw.githubusercontent.com/DungxND/VBookMT/main/vbook-extension/plugin.zip",
-      "version": 1,
+      "version": 4,
       "source": "https://github.com/DungxND/VBookMT",
       "icon": "https://raw.githubusercontent.com/DungxND/VBookMT/main/vbook-extension/icon.png",
-      "description": "Dịch truyện Trung offline bằng model AI Hachimi & Moxhi, chuẩn xưng hô convert, không cần mạng.",
+      "description": "Dịch truyện qua app VBookMT chạy nền trên điện thoại hoặc máy tính.",
       "type": "translate",
       "locale": "vi_VN"
     }

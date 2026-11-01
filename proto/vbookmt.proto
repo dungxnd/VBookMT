@@ -1,0 +1,116 @@
+// VBookMT wire contract — plugin <-> host, gRPC-Web (protobuf over HTTP/1.1).
+//
+// Rules this schema is deliberately constrained by (see docs/GRPC_WEB_MIGRATION.md):
+//   * Every field type must be encodable by a hand-written codec in a sandboxed JS runtime:
+//     string, bool, int32, double, repeated string. No maps, no oneofs, no nested messages,
+//     no 64-bit integers (a JS varint decoder must never need 64-bit math), no bytes payloads.
+//   * Field numbers are permanent. Never renumber, never reuse a removed number.
+//   * proto3 explicit presence (`optional`) is required where the legacy JSON used
+//     0 / "" / false as "leave unchanged" (config patches).
+//   * No streaming RPCs: a chapter is delivered whole or the call fails (ARCHITECTURE non-goal).
+
+syntax = "proto3";
+
+package vbookmt.v1;
+
+option java_package = "com.vbookmt.wire.v1";
+option java_multiple_files = true;
+
+// ---------------------------------------------------------------------------
+// Translator — the only service the plugin ever calls.
+// Method path: /vbookmt.v1.Translator/<MethodName>
+// ---------------------------------------------------------------------------
+service Translator {
+  // Translate one chapter. Replaces POST /translate.
+  rpc Translate(TranslateRequest) returns (TranslateResponse);
+
+  // Liveness + tuning snapshot. Replaces GET /health and GET /.
+  rpc Health(Empty) returns (HealthReport);
+
+  // Current tuning knobs. Device-local, no auth (loopback only).
+  rpc GetConfig(Empty) returns (TranslateConfig);
+
+  // Patch tuning knobs. Absent fields mean "leave unchanged".
+  rpc SetConfig(TranslateConfig) returns (ConfigResult);
+
+  // S0 energy harness, JSONL records passthrough. Replaces GET /energy.
+  rpc GetEnergy(Empty) returns (EnergySnapshot);
+
+  // Replaces POST /energy/reset.
+  rpc ResetEnergy(Empty) returns (ResetResult);
+}
+
+message Empty {}
+
+// --- Translate -------------------------------------------------------------
+message TranslateRequest {
+  string text = 1;   // already sanitised by the plugin; server caps at 50 000 chars
+  string from = 2;   // "auto" (default) | "zh"
+  string to = 3;     // "vi"
+  string style = 4;  // "qt" (convert register)
+  string model = 5;  // DEPRECATED, ignored: the host owns model selection
+}
+
+message TranslateResponse {
+  bool success = 1;
+  string translated_text = 2;
+  string error = 3;      // empty when success
+  int32 elapsed_ms = 4;  // host-measured wall clock for the whole chapter
+}
+
+// --- Config ----------------------------------------------------------------
+// Every field is a patch: absent = leave unchanged. This is why the schema needs
+// explicit presence instead of proto3's 0/"" == unset convention.
+message TranslateConfig {
+  optional int32 max_batch = 1;
+  optional string batch_type = 2;    // "tokens" | "examples"
+  optional int32 threads = 3;
+  optional int32 chunk_chars = 4;    // measured throughput knob; > 250 costs sentences
+  optional string compute_type = 5;  // "int8" | "int8_float32" | "float16" | ... | "auto"
+  optional bool clear_cache = 6;
+  optional bool cache_enabled = 7;
+}
+
+// Mirrors TranslationSettings.apply(); kept as JSON text in phase 1 so the host's
+// existing response shape is not re-modelled before it is needed.
+message ConfigResult {
+  string applied_json = 1; // TODO(phase 3): replace with typed fields
+}
+
+// --- Health ----------------------------------------------------------------
+message HealthReport {
+  string status = 1;       // "healthy"
+  string host = 2;         // "android" | "windows"
+  string engine = 3;       // "CTranslate2"
+  int32 port = 4;
+  string model = 5;        // active model id
+  bool ready = 6;
+  int32 requests = 7;
+  int32 inflight = 8;
+  int32 threads = 9;
+  int32 max_batch = 10;
+  string batch_type = 11;
+  string compute_type = 12;
+  int32 chunk_chars = 13;
+  bool cache_enabled = 14;
+  int32 cache_entries = 15;
+  int32 cache_chars = 16;
+  int32 cache_hits = 17;
+  int32 cache_misses = 18;
+  double cache_hit_pct = 19;
+  int32 cache_disk_bytes = 20; // bounded journal; stays under 2 GB by design
+  int32 cache_disk_restored = 21;
+  int32 pss_mb = 22;           // Android only, 0 on Windows
+  int32 jvm_heap_mb = 23;      // Android only, 0 on Windows
+}
+
+// --- S0 energy harness -----------------------------------------------------
+// The harness writes one JSON object per line (session header + one per chapter).
+// Records stay opaque JSON strings until something actually parses them.
+message EnergySnapshot {
+  repeated string records_jsonl = 1;
+}
+
+message ResetResult {
+  bool reset = 1;
+}

@@ -59,40 +59,4 @@ object TextProcessor {
         val sanitized = sanitize(text)
         return SinoVietnameseDict.translate(sanitized)
     }
-
-    /**
-     * Chunks a long chapter into safe paragraph blocks (max ~800-1200 characters)
-     * to prevent exceeding the MarianMT 512-token position capacity.
-     */
-    fun splitIntoParagraphs(text: String, maxCharsPerChunk: Int = 1000): List<String> {
-        val paragraphs = text.split("\n")
-        val chunks = mutableListOf<String>()
-        val currentChunk = StringBuilder()
-
-        for (para in paragraphs) {
-            val trimmed = para.trim()
-            if (trimmed.isEmpty()) {
-                if (currentChunk.isNotEmpty()) {
-                    currentChunk.append("\n")
-                }
-                continue
-            }
-
-            if (currentChunk.isNotEmpty() && (currentChunk.length + trimmed.length + 1) > maxCharsPerChunk) {
-                chunks.add(currentChunk.toString())
-                currentChunk.clear()
-            }
-
-            if (currentChunk.isNotEmpty() && !currentChunk.endsWith("\n")) {
-                currentChunk.append("\n")
-            }
-            currentChunk.append(trimmed)
-        }
-
-        if (currentChunk.isNotEmpty()) {
-            chunks.add(currentChunk.toString())
-        }
-
-        return if (chunks.isEmpty() && text.isNotBlank()) listOf(text) else chunks
-    }
 }

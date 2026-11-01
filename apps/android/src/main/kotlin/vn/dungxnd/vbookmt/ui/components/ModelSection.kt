@@ -14,22 +14,26 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.vbookmt.core.model.ModelRegistry
 import com.vbookmt.core.model.ModelSpec
+import com.vbookmt.core.model.QuantVariant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import vn.dungxnd.vbookmt.service.Ct2Translator
+import vn.dungxnd.vbookmt.service.Engines
 import vn.dungxnd.vbookmt.service.ServiceState
 import vn.dungxnd.vbookmt.util.ModelDownloader
 import java.io.File
 
 /**
- * The model chooser: section header plus one [ModelCard] per bundled model.
+ * The model chooser: section header plus one [ModelCard] per shipped model.
  *
- * The install flow for both models is the same six steps (log, download with progress, update the
- * two pieces of state, select the model, preload the engine, toast), so it lives in [install] once
- * instead of being copy-pasted per card. Installed/downloading flags are local UI state - nothing
- * outside this section reads them.
+ * The install flow is the same for both models (log, download with progress, update state, select,
+ * preload the engine, toast), so it lives in [install] once instead of being copy-pasted per card.
+ *
+ * **Install state is per precision, not per model.** The three builds are separate folder downloads, so
+ * a model sitting on disk as FP16 is *not* installed as Q8. [installed] therefore tracks the variant the
+ * download actually wrote, and the card asks for a re-download when the user picks a different one —
+ * rather than silently running the old weights under the new label.
  */
 @Composable
 fun ModelSection(
@@ -39,63 +43,81 @@ fun ModelSection(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    var hachimiInstalled by remember {
-        mutableStateOf(ModelDownloader.isModelReady(context, ModelRegistry.HACHIMI_60_QT))
-    }
-    var moxhiInstalled by remember {
-        mutableStateOf(ModelDownloader.isModelReady(context, ModelRegistry.MOXHI_30_QT))
-    }
-    var hachimiDownloading by remember { mutableStateOf(false) }
-    var moxhiDownloading by remember { mutableStateOf(false) }
+    var downloadingModelId by remember { mutableStateOf<String?>(null) }
+    var downloadPercent by remember { mutableStateOf<Int?>(null) }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SectionHeader(title = "Mô hình Dịch thuật", badge = "CTranslate2 INT8")
+        SectionHeader(title = "Mô hình Dịch thuật", badge = "ONNX · FP16 / Q16 / Q8")
 
-        ModelCard(
-            model = ModelRegistry.HACHIMI_60_QT,
-            isSelected = selectedModel.id == ModelRegistry.HACHIMI_60_QT.id,
-            badge = "Mặc định • 55MB • BLEU 53.0",
-            isInstalled = hachimiInstalled,
-            isDownloading = hachimiDownloading,
-            onSelect = { onSelectModel(ModelRegistry.HACHIMI_60_QT) },
-            onDownload = {
-                install(
-                    context = context,
-                    scope = coroutineScope,
-                    spec = ModelRegistry.HACHIMI_60_QT,
-                    onDownloadingChange = { hachimiDownloading = it },
-                    onInstalledChange = { hachimiInstalled = it },
-                    onSelectModel = onSelectModel,
-                )
+        for (model in ModelRegistry.ALL_MODELS) {
+            // Which precision this card is set to. Kept per-model so switching cards does not carry a
+            // choice across to a different artifact, and seeded from what is already on disk so a
+            // model installed at Q8 does not read as "not installed" because the picker says FP16.
+            var variant by remember(model.id) {
+                mutableStateOf(ModelDownloader.installedVariant(context, model))
             }
-        )
+            var isInstalled by remember(model.id) {
+                mutableStateOf(ModelDownloader.isModelReady(context, model, variant))
+            }
+            val isDownloading = downloadingModelId == model.id
+            val isAnyDownloading = downloadingModelId != null
 
-        ModelCard(
-            model = ModelRegistry.MOXHI_30_QT,
-            isSelected = selectedModel.id == ModelRegistry.MOXHI_30_QT.id,
-            badge = "Siêu nhẹ • 36MB • Tiết kiệm RAM",
-            isInstalled = moxhiInstalled,
-            isDownloading = moxhiDownloading,
-            onSelect = { onSelectModel(ModelRegistry.MOXHI_30_QT) },
-            onDownload = {
-                install(
-                    context = context,
-                    scope = coroutineScope,
-                    spec = ModelRegistry.MOXHI_30_QT,
-                    onDownloadingChange = { moxhiDownloading = it },
-                    onInstalledChange = { moxhiInstalled = it },
-                    onSelectModel = onSelectModel,
-                )
+            val shownVariant = if (model.hasVariants) variant else null
+            // Every shipped artifact is ONNX with three quant variants, so the badge always names the
+            // picked variant and its real download size.
+            val badge = buildString {
+                if (model.isDefault) append("Mặc định • ")
+                append("ONNX ")
+                append(shownVariant?.label ?: "FP16")
+                append(" • ")
+                append(model.sizeMbFor(shownVariant))
+                append("MB • gọt 6k")
             }
-        )
+
+            ModelCard(
+                model = model,
+                isSelected = selectedModel.id == model.id,
+                badge = badge,
+                isInstalled = isInstalled,
+                isDownloading = isDownloading,
+                isAnyDownloading = isAnyDownloading,
+                downloadPercent = if (isDownloading) downloadPercent else null,
+                variants = model.variants,
+                selectedVariant = shownVariant,
+                onSelectVariant = { picked ->
+                    variant = picked
+                    // A different precision is a different set of files, so re-check rather than
+                    // assume: this is what makes the button reappear for an un-downloaded variant.
+                    isInstalled = ModelDownloader.isModelReady(context, model, picked)
+                },
+                onSelect = { onSelectModel(model) },
+                onDownload = {
+                    if (isAnyDownloading) return@ModelCard
+                    install(
+                        context = context,
+                        scope = coroutineScope,
+                        spec = model,
+                        variant = shownVariant,
+                        onProgress = { downloadPercent = it },
+                        onDownloadingChange = { downloading ->
+                            downloadingModelId = if (downloading) model.id else null
+                            if (!downloading) downloadPercent = null
+                        },
+                        onInstalledChange = { isInstalled = it },
+                        onSelectModel = onSelectModel,
+                    )
+                }
+            )
+        }
     }
 }
 
 /**
- * Downloads one model, then selects it and preloads the engine.
+ * Downloads one model at [variant], then selects it and preloads the engine.
  *
  * Progress is logged every 25% rather than per file chunk: the debug console keeps only the last
- * 150 lines and per-chunk logging pushed everything else out.
+ * 150 lines and per-chunk logging pushed everything else out. The UI gets the raw percentage so the
+ * card can show a real progress bar.
  */
 private fun install(
     context: Context,
@@ -104,17 +126,25 @@ private fun install(
     onDownloadingChange: (Boolean) -> Unit,
     onInstalledChange: (Boolean) -> Unit,
     onSelectModel: (ModelSpec) -> Unit,
+    variant: QuantVariant? = null,
+    onProgress: (Int?) -> Unit = {},
 ) {
-    // "ngocdang83/HachimiMT-60-QT" -> "HachimiMT-60-QT" / "HachimiMT" for logs and toasts, so the
-    // wording matches what the card and the releases page call the model.
+    // "dungxnd/HachimiMT-60-QT-ONNX" -> "HachimiMT-60-QT-ONNX" / "HachimiMT" for logs and toasts, so
+    // the wording matches what the card and the releases page call the model.
     val label = spec.repoId.substringAfter('/')
     val shortLabel = label.substringBefore('-')
+    val sizeMb = spec.sizeMbFor(variant)
+    val variantLabel = variant?.let { " ${it.label}" } ?: ""
 
     onDownloadingChange(true)
-    ServiceState.log("Bắt đầu tải $label (${spec.sizeMb}MB) từ HuggingFace...")
+    onProgress(0)
+    ServiceState.log("Bắt đầu tải $label$variantLabel (${sizeMb}MB) từ HuggingFace...")
     scope.launch {
-        val ok = ModelDownloader.downloadModel(context, spec) { progress ->
-            if (progress.percent % 25 == 0) {
+        var lastLoggedPercent = -1
+        val ok = ModelDownloader.downloadModel(context, spec, variant) { progress ->
+            onProgress(progress.percent)
+            if (progress.percent % 25 == 0 && progress.percent != lastLoggedPercent) {
+                lastLoggedPercent = progress.percent
                 ServiceState.log(
                     "Đang tải ${progress.currentFile}: ${progress.percent}% " +
                         "(${progress.fileIndex}/${progress.totalFiles})"
@@ -122,6 +152,7 @@ private fun install(
             }
         }
         onDownloadingChange(false)
+        onProgress(null)
         onInstalledChange(ok)
 
         if (!ok) {
@@ -135,10 +166,10 @@ private fun install(
         }
 
         onSelectModel(spec)
-        ServiceState.log("Đã tải xong $label thành công!")
+        ServiceState.log("Đã tải xong $label$variantLabel thành công!")
         Toast.makeText(context, "Đã tải xong $label!", Toast.LENGTH_SHORT).show()
         withContext(Dispatchers.IO) {
-            Ct2Translator.init(File(context.filesDir, "models/${spec.id}").absolutePath)
+            Engines.ensureActiveLoaded(File(context.filesDir, "models/${spec.id}"))
         }
     }
 }

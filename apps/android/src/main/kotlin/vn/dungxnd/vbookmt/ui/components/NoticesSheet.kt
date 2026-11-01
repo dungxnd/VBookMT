@@ -84,10 +84,10 @@ fun NoticesSheetContent(onClose: () -> Unit) {
         )
 
         NoticeItem(
-            name = "CTranslate2",
-            author = "OpenNMT Team",
+            name = "ONNX Runtime",
+            author = "Microsoft",
             license = "MIT License",
-            desc = "Engine suy luận C++ tối ưu hóa bộ nhớ và tốc độ cho Transformer & Seq2Seq."
+            desc = "Engine suy luận thứ hai, dùng cho các mô hình ONNX và tăng tốc GPU/NPU khi thiết bị hỗ trợ."
         )
 
         NoticeItem(

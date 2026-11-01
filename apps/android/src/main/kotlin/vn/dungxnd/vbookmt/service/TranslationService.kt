@@ -23,6 +23,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import vn.dungxnd.vbookmt.MainActivity
+import vn.dungxnd.vbookmt.service.onnx.OnnxTranslator
+import vn.dungxnd.vbookmt.util.EnergyHarness
 import vn.dungxnd.vbookmt.util.PerformanceTuner
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
@@ -32,7 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * Deliberately thin: start/stop, the persistent notification, and bringing the native model up.
  * The HTTP surface lives in [TranslationHttpServer], request handling in [TranslateHandler],
- * translation in [ChapterTranslator]/[ChunkTranslator]/[Ct2Translator], tuning in
+ * translation in [ChapterTranslator]/[ChunkTranslator]/[OnnxTranslator], tuning in
  * [TranslationSettings], and shared status in [ServiceState].
  */
 class TranslationService : Service() {
@@ -51,6 +53,9 @@ class TranslationService : Service() {
         // One application context for the translation layer, so /config can persist settings without
         // holding (or leaking) a Service reference.
         ServiceContextHolder.attach(this)
+        // Energy/thermal sampling (S0): attached once per process so the sampler thread outlives a
+        // single chapter but still dies with the service.
+        EnergyHarness.attach(this)
         // Replay the durable memo off the main thread. Nothing waits for it: a request that arrives
         // first simply starts from a cold memo and fills the journal again.
         serviceScope.launch { CacheStore.attach(applicationContext) }
@@ -69,7 +74,17 @@ class TranslationService : Service() {
             }
 
             else -> {
-                val requestedModel = intent?.getStringExtra(ServiceContract.EXTRA_ACTIVE_MODEL)
+                // A model named in `files/active-model` wins over the UI selection. Benchmarking has
+                // to switch models repeatedly, and driving a Compose radio button over adb is fragile
+                // (scroll position, transient overlays, the performance sweep swallowing taps). One
+                // file, written with `run-as`, makes a sweep reproducible:
+                //   adb shell "run-as <pkg> sh -c 'echo moxhi-30-qt-onnx > files/active-model'"
+                val fileModel = runCatching {
+                    File(filesDir, "active-model").takeIf { it.isFile }?.readText()?.trim()
+                }.getOrNull()?.takeIf { it.isNotEmpty() }
+
+                val requestedModel = fileModel
+                    ?: intent?.getStringExtra(ServiceContract.EXTRA_ACTIVE_MODEL)
                     ?: ServiceState.activeModel.value
                 val modelSpec = ModelRegistry.getById(requestedModel)
                 val previousModel = ServiceState.activeModel.value
@@ -79,13 +94,16 @@ class TranslationService : Service() {
                     // dropping them also frees the memory.
                     ChunkTranslator.clearCache()
                     ServiceState.log("Đổi model -> xoá cache bản dịch")
+                    serviceScope.launch(Dispatchers.IO) {
+                        ensureModelReady()
+                    }
                 }
                 ServiceState.log("Khởi động Service với model: ${modelSpec.name} (${modelSpec.id})")
 
                 startForeground(
                     ServiceContract.NOTIFICATION_ID,
                     buildNotification(
-                        "Đang chạy CTranslate2 (${modelSpec.name}) tại cổng ${ServiceContract.PORT}"
+                        "Đang chạy ONNX (${modelSpec.name}) tại cổng ${ServiceContract.PORT}"
                     )
                 )
                 startKtorServer()
@@ -113,15 +131,10 @@ class TranslationService : Service() {
 
         serviceScope.launch {
             try {
-                val handler = TranslateHandler(
-                    inFlight = inFlightRequests,
-                    ensureModelReady = { ensureModelReady() },
-                    translateChapter = ChapterTranslator::translate,
-                )
                 val engine = TranslationHttpServer(
                     port = ServiceContract.PORT,
                     inFlight = inFlightRequests,
-                    translateHandler = handler,
+                    ensureModelReady = { ensureModelReady() },
                 ).create()
 
                 serverEngine = engine
@@ -157,24 +170,28 @@ class TranslationService : Service() {
     // -----------------------------------------------------------------------------------------
 
     private suspend fun ensureModelReady(): Boolean = withContext(Dispatchers.IO) {
-        if (Ct2Translator.isReady()) return@withContext true
-
+        val spec = ModelRegistry.getById(ServiceState.activeModel.value)
         val dir = File(filesDir, "models/${ServiceState.activeModel.value}")
+
+        if (OnnxTranslator.isReady() && OnnxTranslator.getActiveModelPath() == dir.absolutePath) {
+            return@withContext true
+        }
+
         if (!dir.exists() || !dir.isDirectory) {
             ServiceState.log("Model chưa tải: ${dir.absolutePath}")
             return@withContext false
         }
 
-        // A phone that has been tuned keeps its measured settings across restarts; otherwise
-        // Ct2Translator picks the big-core-aware default. CT2 ignores intra_threads unless it is
-        // passed explicitly, and its built-in default (4) oversubscribes big.LITTLE phones.
-        val appliedSaved = PerformanceTuner.applySaved(this@TranslationService, dir.absolutePath)
-        val ok = appliedSaved || Ct2Translator.init(dir.absolutePath)
+        // A phone that has been tuned keeps its measured thread count across restarts; otherwise the
+        // engine picks the big-core-aware default. ONNX Runtime does not manage its own pool, so
+        // getting the thread count right actually matters.
+        val appliedSaved = PerformanceTuner.applySaved(this@TranslationService, dir)
+        val ok = appliedSaved || OnnxTranslator.init(dir)
         if (ok) {
             val tuning = PerformanceTuner.current(this@TranslationService)
-            ServiceState.log("CT2 sẵn sàng: ${tuning.detailText} → ${tuning.speedText}")
+            ServiceState.log("ONNX sẵn sàng: ${tuning.detailText} → ${tuning.speedText}")
         } else {
-            ServiceState.log("CT2 init THẤT BẠI: ${dir.absolutePath}")
+            ServiceState.log("ONNX init THẤT BẠI: ${dir.absolutePath}")
         }
         ok
     }
@@ -190,7 +207,7 @@ class TranslationService : Service() {
                 "VBookMT Offline Translation Service",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Giữ máy chủ dịch CTranslate2 hoạt động cho vBook"
+                description = "Giữ máy chủ dịch ONNX hoạt động cho vBook"
                 setShowBadge(false)
             }
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -212,7 +229,7 @@ class TranslationService : Service() {
         )
 
         return NotificationCompat.Builder(this, ServiceContract.CHANNEL_ID)
-            .setContentTitle("VBookMT • CTranslate2 Engine")
+            .setContentTitle("VBookMT • ONNX Engine")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(mainPendingIntent)

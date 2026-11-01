@@ -45,9 +45,15 @@ object TranslationCacheJournal {
     /**
      * Decodes one record.
      *
-     * @return the key/value pair, or null when the line is truncated or otherwise corrupt - callers
-     *   must stop replaying at that point rather than skip the line, because everything after a
-     *   partial write is untrustworthy.
+     * @return the key/value pair, or null when the line is corrupt — a missing field separator, or an
+     *   escape sequence that was cut in half by a partial write.
+     *
+     * **A record truncated at a character boundary is indistinguishable from a valid one** and decodes
+     * successfully: the format has no per-line checksum or length prefix. Recovery from such a cut is
+     * therefore by *ordering*, not by detection — the next replay finds the line after it unparseable
+     * (its bytes are the tail of the split record) and stops there. A single record lost in the middle
+     * of an append is accepted as the cost of never surfacing corrupt text; the alternative, verifying
+     * every line against a checksum, buys nothing for a cache whose contents the engine can regenerate.
      */
     fun decode(line: String): Pair<String, String>? {
         val separator = line.indexOf(SEPARATOR)

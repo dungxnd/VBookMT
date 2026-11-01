@@ -1,4 +1,0 @@
-headers = ct2_c_api.h
-headerFilter = ct2_c_api.h
-package = com.vbookmt.windows.ct2
-compilerOpts = -Isrc/nativeInterop/cinterop

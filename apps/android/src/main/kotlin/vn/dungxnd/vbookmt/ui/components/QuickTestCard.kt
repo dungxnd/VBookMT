@@ -33,11 +33,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vbookmt.core.processor.TextProcessor
+import com.vbookmt.core.tuner.BenchmarkProse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import vn.dungxnd.vbookmt.service.ChunkTranslator
-import vn.dungxnd.vbookmt.service.Ct2Translator
+import vn.dungxnd.vbookmt.service.Engines
 import vn.dungxnd.vbookmt.service.ServiceState
 import java.io.File
 
@@ -52,7 +53,7 @@ fun QuickTestCard(modelId: String) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    var testInput by remember { mutableStateOf("“醒醒，指挥官！快醒醒！”") }
+    var testInput by remember { mutableStateOf(BenchmarkProse.QUICK_TEST_SAMPLE) }
     var testOutput by remember { mutableStateOf("") }
     var testLatencyMs by remember { mutableStateOf<Long?>(null) }
     var isTranslatingTest by remember { mutableStateOf(false) }
@@ -111,10 +112,11 @@ fun QuickTestCard(modelId: String) {
                             val start = System.currentTimeMillis()
                             try {
                                 val out = withContext(Dispatchers.Default) {
-                                    if (!Ct2Translator.isReady()) {
+                                    // Load the engine if it is not up yet, honouring any thread count this phone has measured.
+                                    if (!Engines.isActiveReady()) {
                                         val modelDir = File(context.filesDir, "models/$modelId")
                                         if (!modelDir.exists()) modelDir.mkdirs()
-                                        Ct2Translator.init(modelDir.absolutePath)
+                                        Engines.ensureActiveLoaded(modelDir)
                                     }
                                     val encoded = TextProcessor.encodeSource(testInput)
                                     val translated = ChunkTranslator.translate(encoded, numBeams = 1)

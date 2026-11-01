@@ -18,53 +18,36 @@ on:
         description: 'Mark as Pre-release'
         type: boolean
         default: false
-# A tag push and a manual dispatch for the same version must never overlap: publishing a release is
-# not idempotent, so a running release is never cancelled by a newer one.
+
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
-  contents: read  # every job reads; only the publish job is granted write, further down
+  contents: read
 
 jobs:
   # =========================================================================
-  # 0. Preflight - does the tag match what the code says it is?
+  # 0. Preflight - fast gatekeeper verifying tag consistency
   # =========================================================================
   preflight:
-    name: Verify tag vs manifest & changelog
+    name: Verify Tag & Manifest
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Fails in seconds instead of after a ten-minute native build: a tag that disagrees with
-      # versionName publishes an APK claiming a different version, and a tag with no CHANGELOG
-      # section publishes empty release notes.
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Check version consistency
         env:
           TAG_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.ref_name }}
-        run: |
-          python - <<'PY'
-          import os, pathlib, re, sys
+        run: python scripts/verify_tag.py "$TAG_REF"
 
-          tag = os.environ["TAG_REF"].strip().lstrip("v")
-          gradle = pathlib.Path("apps/android/build.gradle.kts").read_text(encoding="utf-8")
-          match = re.search(r'versionName\s*=\s*"([^"]+)"', gradle)
-          changelog = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
-
-          problems = []
-          if not match:
-              problems.append("could not read versionName from apps/android/build.gradle.kts")
-          elif match.group(1) != tag:
-              problems.append(f"versionName is {match.group(1)!r} but the tag is {tag!r}")
-          if f"## [v{tag}]" not in changelog:
-              problems.append(f"CHANGELOG.md has no '## [v{tag}]' section")
-
-          print("\n".join(problems) if problems else f"tag v{tag} matches versionName and CHANGELOG")
-          sys.exit(1 if problems else 0)
-          PY
   # =========================================================================
   # 1. Build Android APK
   # =========================================================================
@@ -88,8 +71,6 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "9.8.2"
 
       - name: Cache Android Native Libraries
         id: cache-native-libs
@@ -98,13 +79,9 @@ jobs:
           path: |
             apps/android/src/main/jniLibs
             apps/android/src/main/cpp/include
-          # Keyed on the build script's content. It used to hardcode "v4.5.0" while the script builds
-          # CTranslate2 4.8.4, so a cache hit restored prebuilt headers from a different dependency
-          # set than the sources expect - which broke this very job on a missing absl header.
-          # No restore-keys on purpose: a partial restore is the bug, not the mitigation.
           key: android-native-${{ hashFiles('scripts/build_android_native.sh') }}-arm64-v8a
 
-      - name: Build CTranslate2 & SentencePiece Native Libraries
+      - name: Build SentencePiece Native Libraries
         if: steps.cache-native-libs.outputs.cache-hit != 'true'
         run: |
           chmod +x scripts/build_android_native.sh
@@ -112,9 +89,7 @@ jobs:
 
       - name: Build Android APK
         run: |
-          # Build optimized release APK (minified, resource-shrunk, signed with debug keystore)
-          gradle :apps:android:assembleRelease --stacktrace
-          
+          ./gradlew :apps:android:assembleRelease --stacktrace
           mkdir -p dist
           cp apps/android/build/outputs/apk/release/*.apk dist/VBookMT-Android.apk
 
@@ -126,10 +101,10 @@ jobs:
           if-no-files-found: error
 
   # =========================================================================
-  # 2. Build Windows Native EXE (.zip)
+  # 2. Build Windows Application & MSI Installer
   # =========================================================================
   build-windows:
-    name: Build Windows Native App
+    name: Build Windows App & MSI
     runs-on: windows-latest
     needs: preflight
     timeout-minutes: 45
@@ -143,86 +118,70 @@ jobs:
           distribution: "temurin"
           java-version: "21"
 
+      - name: Cache Windows native dependencies
+        id: cache-deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/native-win/sentencepiece
+            build/native-win/build-spm
+          key: win-deps-${{ hashFiles('scripts/build_windows_native.ps1') }}
+
+      - name: Build native engine DLLs
+        run: |
+          $buildArgs = @()
+          if ('${{ steps.cache-deps.outputs.cache-hit }}' -eq 'true') {
+              $buildArgs += '-SkipDeps'
+          }
+          ./scripts/build_windows_native.ps1 @buildArgs
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "9.8.2"
 
-      - name: Build Windows Kotlin/Native Binary
+      - name: Build Windows Compose Desktop Application & MSI
         run: |
-          gradle :apps:windows:assemble --stacktrace
+          .\gradlew.bat :apps:windows:createDistributable :apps:windows:packageMsi --stacktrace
           if ($LASTEXITCODE -ne 0) { throw "Gradle build failed with exit code $LASTEXITCODE" }
-          
-          New-Item -ItemType Directory -Force -Path dist\VBookMT-Windows
-          $exeFound = $false
-          if (Test-Path "apps\windows\build\bin\windows\releaseExecutable\*.exe") {
-              Copy-Item "apps\windows\build\bin\windows\releaseExecutable\*.exe" "dist\VBookMT-Windows\"
-              $exeFound = $true
-          } elseif (Test-Path "apps\windows\build\bin\windows\debugExecutable\*.exe") {
-              Copy-Item "apps\windows\build\bin\windows\debugExecutable\*.exe" "dist\VBookMT-Windows\"
-              $exeFound = $true
-          }
-          if (-not $exeFound) {
-              throw "No Windows executable found in apps/windows/build/bin/windows!"
-          }
-          Copy-Item NOTICE.md dist\VBookMT-Windows\
-          Copy-Item README.md dist\VBookMT-Windows\
-          
-          Compress-Archive -Path dist\VBookMT-Windows\* -DestinationPath dist\VBookMT-Windows.zip
 
-      - name: Upload Windows Artifact
+          New-Item -ItemType Directory -Force -Path dist
+          $appDir = "apps\windows\build\compose\binaries\main\app\VBookMT"
+          if (-not (Test-Path $appDir)) {
+              throw "Compose distributable directory not found at $appDir!"
+          }
+          Copy-Item NOTICE.md $appDir\
+          Copy-Item README.md $appDir\
+          Compress-Archive -Path "$appDir\*" -DestinationPath dist\VBookMT-Windows.zip
+
+          if (Test-Path "apps\windows\build\compose\binaries\main\msi\*.msi") {
+              Copy-Item "apps\windows\build\compose\binaries\main\msi\*.msi" "dist\"
+          }
+
+      - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows-zip
-          path: dist/VBookMT-Windows.zip
+          name: windows-assets
+          path: |
+            dist/VBookMT-Windows.zip
+            dist/*.msi
           if-no-files-found: error
 
   # =========================================================================
-  # 3. Package vBook Extension
-  # =========================================================================
-  package-extension:
-    name: Package vBook Extension
-    runs-on: ubuntu-latest
-    needs: preflight
-    timeout-minutes: 10
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Create Extension Package (.zip)
-        run: |
-          mkdir -p dist
-          python scripts/package_extension.py dist/vbookmt-extension.zip
-
-      - name: Upload Extension Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: vbook-extension-zip
-          path: dist/vbookmt-extension.zip
-          if-no-files-found: error
-
-  # =========================================================================
-  # 4. Generate Release Notes & Publish to GitHub Releases
+  # 3. Package Extension, Generate Notes & Publish Release
   # =========================================================================
   release:
     name: Publish GitHub Release
-    needs: [preflight, build-android, build-windows, package-extension]
+    needs: [build-android, build-windows]
     permissions:
-      contents: write  # the only job that publishes anything
+      contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Full history for git log extraction
+          fetch-depth: 0
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -237,6 +196,12 @@ jobs:
           fi
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
+      - name: Package vBook Extension
+        run: |
+          mkdir -p release-assets
+          python scripts/package_extension.py release-assets/vbookmt-extension.zip
+          cp release-assets/vbookmt-extension.zip "release-assets/vbookmt-extension-${{ steps.vars.outputs.tag }}.zip"
+
       - name: Generate Release Notes
         run: |
           mkdir -p build
@@ -249,27 +214,20 @@ jobs:
           name: android-apk
           path: release-assets
 
-      - name: Download Windows Artifact
+      - name: Download Windows Artifacts
         uses: actions/download-artifact@v4
         with:
-          name: windows-zip
+          name: windows-assets
           path: release-assets
 
-      - name: Download Extension Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: vbook-extension-zip
-          path: release-assets
-
-      - name: Rename Release Files with Version Tag
+      - name: Rename Android and Windows Assets with Version Tag
         run: |
           TAG="${{ steps.vars.outputs.tag }}"
-          mv release-assets/VBookMT-Android.apk "release-assets/VBookMT-Android-${TAG}.apk"
-          mv release-assets/VBookMT-Windows.zip "release-assets/VBookMT-Windows-${TAG}.zip"
-          mv release-assets/vbookmt-extension.zip "release-assets/vbookmt-extension-${TAG}.zip"
+          [ -f release-assets/VBookMT-Android.apk ] && mv release-assets/VBookMT-Android.apk "release-assets/VBookMT-Android-${TAG}.apk"
+          [ -f release-assets/VBookMT-Windows.zip ] && mv release-assets/VBookMT-Windows.zip "release-assets/VBookMT-Windows-${TAG}.zip"
           ls -lh release-assets
 
-      - name: Create GitHub Release
+      - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.vars.outputs.tag }}
@@ -278,6 +236,4 @@ jobs:
           draft: ${{ github.event.inputs.draft || false }}
           prerelease: ${{ github.event.inputs.prerelease || false }}
           files: |
-            release-assets/VBookMT-Android-${{ steps.vars.outputs.tag }}.apk
-            release-assets/VBookMT-Windows-${{ steps.vars.outputs.tag }}.zip
-            release-assets/vbookmt-extension-${{ steps.vars.outputs.tag }}.zip
+            release-assets/*

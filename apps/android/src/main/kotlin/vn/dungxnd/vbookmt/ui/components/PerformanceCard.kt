@@ -49,7 +49,9 @@ fun PerformanceCard(
     isTuning: Boolean,
     progress: Pair<Int, Int>,
     cacheText: String?,
-    onTune: () -> Unit
+    cacheHasEntries: Boolean,
+    onTune: () -> Unit,
+    onClearCache: () -> Unit,
 ) {
     var showDetail by remember { mutableStateOf(false) }
     val (done, total) = progress
@@ -97,6 +99,41 @@ fun PerformanceCard(
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                // Clearing is destructive and irreversible -- it drops both the in-memory memo and the
+                // journal on disk, so every chapter the reader already paid CPU for is gone. Windows has
+                // had this control all along; Android did not, so the cache could only be cleared by
+                // reinstalling. Two taps, and only shown once there is something to clear.
+                if (cacheHasEntries) {
+                    var confirming by remember { mutableStateOf(false) }
+                    if (confirming) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = { confirming = false }) {
+                                Text("Huỷ", fontSize = 12.sp)
+                            }
+                            TextButton(
+                                onClick = {
+                                    confirming = false
+                                    onClearCache()
+                                }
+                            ) {
+                                Text(
+                                    "Xoá hẳn",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            Text(
+                                "Mất toàn bộ bản dịch đã lưu",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        TextButton(onClick = { confirming = true }) {
+                            Text("Xoá bộ nhớ đệm", fontSize = 12.sp)
+                        }
+                    }
+                }
             }
 
             Spacer(Modifier.height(12.dp))

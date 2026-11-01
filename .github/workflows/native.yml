@@ -1,12 +1,12 @@
 name: Native Libraries
 
-# Rebuilds the prebuilt CTranslate2 + SentencePiece stack from scratch, every week.
+# Rebuilds the prebuilt SentencePiece stack from scratch, every week.
 #
-# Why this exists: those libraries and their headers are produced by scripts/build_android_native.sh
-# and cached, not committed. A release therefore trusted a cache entry that could be days old, and
-# once that entry expired the script ran for the first time in weeks - and failed, part-way through
-# publishing v1.1.0. Exercising the build on a schedule turns "discovered during a release" into
-# "discovered on a Monday", and keeps the dependency pins honest.
+# Why this exists: that library and its header tree are produced by
+# scripts/build_android_native.sh and cached, not committed. A release therefore trusted a cache entry
+# that could be days old, and once that entry expired the script ran for the first time in weeks - and
+# failed, part-way through publishing v1.1.0. Exercising the build on a schedule turns "discovered
+# during a release" into "discovered on a Monday", and keeps the dependency pins honest.
 
 on:
   schedule:
@@ -36,7 +36,7 @@ jobs:
       # produce a working header tree and libraries from a clean checkout; a cache hit would skip
       # exactly the code path a release depends on. The script itself syntax-checks the header tree
       # as its last step, so a regression fails here with a specific missing header.
-      - name: Build CTranslate2 & SentencePiece
+      - name: Build SentencePiece Native Library
         run: |
           chmod +x scripts/build_android_native.sh
           ./scripts/build_android_native.sh

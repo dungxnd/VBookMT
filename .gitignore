@@ -1,6 +1,8 @@
 # Gradle & Build
 .gradle/
+.kotlin/
 build/
+dist/
 out/
 bin/
 
@@ -16,6 +18,7 @@ local.properties
 # Kotlin / Native & Android
 *.apk
 *.aab
+*.msi
 *.exe
 *.dll
 *.so
@@ -27,6 +30,11 @@ local.properties
 # cache): prebuilt .so files plus a tree of third-party headers. Neither belongs in git.
 apps/android/src/main/jniLibs/
 apps/android/src/main/cpp/include/
+
+# AGP's CMake configure output. Regenerated on every Gradle configure, and it accumulates object
+# files for sources that may no longer exist (it held ct2_engine.cpp.o long after that file was
+# deleted), so a stale copy is worse than none.
+apps/android/.cxx/
 
 # Python & Virtual Environments
 __pycache__/
@@ -48,7 +56,13 @@ exported_models/
 
 # Test outputs & temporary benchmark files
 test_input.txt
+NUL
 output_*.txt
+*.log
+scratch/
+
+# Gold-set tooling and data now live in the XanvuMT repo (the model/inference project). Nothing here
+# should hold gold sets: this directory only converts, publishes, exports and measures artefacts.
 
 # OS files
 .DS_Store

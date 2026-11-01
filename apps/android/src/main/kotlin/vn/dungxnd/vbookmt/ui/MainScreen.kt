@@ -12,8 +12,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.ViewAgenda
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -23,25 +27,46 @@ import androidx.compose.ui.unit.sp
 import com.vbookmt.core.model.ModelRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import vn.dungxnd.vbookmt.service.CacheStore
 import kotlinx.coroutines.withContext
+import vn.dungxnd.vbookmt.service.CacheStore
 import vn.dungxnd.vbookmt.service.ChunkTranslator
-import vn.dungxnd.vbookmt.service.Ct2Translator
+import vn.dungxnd.vbookmt.service.Engines
+import vn.dungxnd.vbookmt.service.ServiceContract
 import vn.dungxnd.vbookmt.service.ServiceState
+import vn.dungxnd.vbookmt.service.TranslationService
 import vn.dungxnd.vbookmt.ui.components.BackgroundOptimizationCard
 import vn.dungxnd.vbookmt.ui.components.DebugLogCard
 import vn.dungxnd.vbookmt.ui.components.ModelSection
-import vn.dungxnd.vbookmt.ui.components.QuickTestCard
 import vn.dungxnd.vbookmt.ui.components.NoticesSheetContent
 import vn.dungxnd.vbookmt.ui.components.OptimizationSetupDialog
 import vn.dungxnd.vbookmt.ui.components.PerformanceCard
+import vn.dungxnd.vbookmt.ui.components.QuickTestCard
 import vn.dungxnd.vbookmt.ui.components.StatusHeroCard
 import vn.dungxnd.vbookmt.util.BatteryOptimizationHelper
+import vn.dungxnd.vbookmt.util.ModelDownloader
 import vn.dungxnd.vbookmt.util.PerformanceTuner
 
-// ============================================================================
-// Main Dashboard Screen
-// ============================================================================
+/**
+ * The three pages of the app, in the order they appear in the bar — the same three the desktop host
+ * shows in its nav rail, with the same labels.
+ *
+ * The screen was a single ~350-line scroll with eight cards, which meant the power toggle, the model
+ * picker and the debug log all competed for the same screen and the reader had to scroll past
+ * diagnostics to start reading. Splitting by intent — *do the thing*, *choose the model*, *configure* —
+ * keeps each page short enough to take in at a glance.
+ *
+ * Names and icons deliberately match `Destination` in the Windows host so the two apps describe the
+ * same three places the same way.
+ */
+private enum class MainTab(
+    val label: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+) {
+    Home("Tổng quan", Icons.Outlined.ViewAgenda),
+    Models("Mô hình", Icons.Outlined.Memory),
+    Settings("Cài đặt", Icons.Outlined.Settings),
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -51,8 +76,9 @@ fun MainScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
+    var selectedTab by rememberSaveable { mutableStateOf(MainTab.Home) }
     var isRunning by remember { mutableStateOf(false) }
-    var selectedModel by remember { mutableStateOf(ModelRegistry.HACHIMI_60_QT) }
+    var selectedModel by remember { mutableStateOf(ModelRegistry.DEFAULT_MODEL) }
 
     var showNoticesSheet by remember { mutableStateOf(false) }
 
@@ -62,15 +88,13 @@ fun MainScreen(
     var isAutoStartOnOpen by remember { mutableStateOf(BatteryOptimizationHelper.isAutoStartServiceOnOpen(context)) }
     var showOptimizationDialog by remember { mutableStateOf(false) }
 
-    // Performance state. Everything device-specific is decided for the user: this card only reports
-    // the outcome in plain words and offers one optional "measure my phone" action.
+    // Performance state. Everything device-specific is decided for the user: the settings page only
+    // reports the outcome in plain words and offers one optional "measure my phone" action.
     var tuning by remember { mutableStateOf<PerformanceTuner.Tuning?>(null) }
     var isTuning by remember { mutableStateOf(false) }
     val tuneProgress by PerformanceTuner.progress.collectAsState()
     var cacheStats by remember { mutableStateOf(ChunkTranslator.cacheStats()) }
 
-    // Live Debug Logs State
-    val debugLogs by ServiceState.debugLogs.collectAsState()
     var isDebugLogEnabled by remember { mutableStateOf(false) }
 
     val notificationLauncher = rememberLauncherForActivityResult(
@@ -93,19 +117,18 @@ fun MainScreen(
             isRunning = true
         }
 
-
-
-        // Pre-initialize CT2 translator in background for instant quick testing, honouring any
-        // tuning this phone has already measured.
+        // Pre-load the ONNX engine in the background for instant quick testing, honouring any
+        // thread count this phone has already measured.
         withContext(Dispatchers.IO) {
             // Warm the memo from disk first: the quick test and a re-opened chapter then cost nothing,
             // even when the app was killed between reads.
             CacheStore.attach(context)
-            if (!Ct2Translator.isReady()) {
+            if (!Engines.isActiveReady()) {
                 val modelDir = java.io.File(context.filesDir, "models/${selectedModel.id}")
                 if (!modelDir.exists()) modelDir.mkdirs()
-                PerformanceTuner.applySaved(context, modelDir.absolutePath) ||
-                    Ct2Translator.init(modelDir.absolutePath)
+                // A tuned phone keeps its measured thread count; otherwise init picks the default.
+                PerformanceTuner.applySaved(context, modelDir) ||
+                    Engines.ensureActiveLoaded(modelDir)
             }
         }
         tuning = PerformanceTuner.current(context)
@@ -120,7 +143,24 @@ fun MainScreen(
         }
     }
 
-
+    /** Pushes a model switch to the service, which is the only place that owns the loaded engine. */
+    fun switchModel(spec: com.vbookmt.core.model.ModelSpec) {
+        selectedModel = spec
+        ServiceState.setActiveModel(spec.id)
+        val intent = android.content.Intent(context, TranslationService::class.java).apply {
+            action = ServiceContract.ACTION_START
+            putExtra(ServiceContract.EXTRA_ACTIVE_MODEL, spec.id)
+        }
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }.onFailure {
+            Toast.makeText(context, "Không đổi được model: ${it.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -139,7 +179,7 @@ fun MainScreen(
                             modifier = Modifier.padding(horizontal = 4.dp)
                         ) {
                             Text(
-                                text = "CT2 Offline",
+                                text = "ONNX Offline",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -160,8 +200,22 @@ fun MainScreen(
                     containerColor = MaterialTheme.colorScheme.background
                 )
             )
+        },
+        bottomBar = {
+            NavigationBar {
+                MainTab.entries.forEach { tab ->
+                    NavigationBarItem(
+                        selected = selectedTab == tab,
+                        onClick = { selectedTab = tab },
+                        icon = { Icon(tab.icon, contentDescription = null) },
+                        label = { Text(tab.label, fontSize = 11.sp) },
+                    )
+                }
+            }
         }
     ) { innerPadding ->
+        // One LazyColumn per tab: the pages have different content and different scroll lengths, and
+        // sharing one scroll state would land the reader mid-settings when they switch back.
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -169,110 +223,129 @@ fun MainScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 1. Hero Status Card
-            item {
-                StatusHeroCard(
-                    isRunning = isRunning,
-                    port = 8765,
-                    onToggle = {
-                        if (isRunning) {
-                            onStopService()
-                            isRunning = false
-                        } else {
-                            onStartService(selectedModel.id)
-                            isRunning = true
-                        }
-                    },
-                    onCopyUrl = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("VBookMT URL", "http://127.0.0.1:8765/translate"))
-                        Toast.makeText(context, "Đã sao chép địa chỉ server!", Toast.LENGTH_SHORT).show()
-                    }
-                )
-            }
-
-            // 2. Background & Battery Optimization Card
-            item {
-                BackgroundOptimizationCard(
-                    isIgnoringBattery = isIgnoringBattery,
-                    isAutoStartOnOpen = isAutoStartOnOpen,
-                    isNotificationGranted = isNotificationGranted,
-                    onToggleAutoStart = { enabled ->
-                        isAutoStartOnOpen = enabled
-                        BatteryOptimizationHelper.setAutoStartServiceOnOpen(context, enabled)
-                    },
-                    onRequestIgnoreBattery = {
-                        BatteryOptimizationHelper.requestIgnoreBatteryOptimizations(context)
-                        isIgnoringBattery = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
-                    },
-                    onRequestNotification = {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            notificationLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                        }
-                    },
-                    onOpenOemSettings = {
-                        BatteryOptimizationHelper.openAutoStartSettings(context)
-                    }
-                )
-            }
-            // 3. Performance card: one button, zero knobs
-            item {
-                PerformanceCard(
-                    tuning = tuning,
-                    isTuning = isTuning,
-                    progress = tuneProgress,
-                    cacheText = PerformanceTuner.cacheText(cacheStats),
-                    onTune = {
-                        isTuning = true
-                        coroutineScope.launch {
-                            val modelDir = java.io.File(context.filesDir, "models/${selectedModel.id}")
-                            val result = withContext(Dispatchers.IO) {
-                                PerformanceTuner.autoTune(context, modelDir.absolutePath)
-                            }
-                            tuning = result ?: PerformanceTuner.current(context)
-                            isTuning = false
-                            cacheStats = ChunkTranslator.cacheStats()
-                            Toast.makeText(
-                                context,
-                                if (result != null) {
-                                    "Đã tối ưu: ${result.speedText}"
+            when (selectedTab) {
+                MainTab.Home -> {
+                    item {
+                        StatusHeroCard(
+                            isRunning = isRunning,
+                            port = 8765,
+                            onToggle = {
+                                if (isRunning) {
+                                    onStopService()
+                                    isRunning = false
                                 } else {
-                                    "Chưa tối ưu được — hãy bật server rồi thử lại"
-                                },
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
+                                    onStartService(selectedModel.id)
+                                    isRunning = true
+                                }
+                            },
+                            onCopyUrl = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("VBookMT URL", "http://127.0.0.1:8765/translate"))
+                                Toast.makeText(context, "Đã sao chép địa chỉ server!", Toast.LENGTH_SHORT).show()
+                            }
+                        )
                     }
-                )
-            }
+                    item { QuickTestCard(modelId = selectedModel.id) }
+                }
 
-
-            // 3. Model chooser: section header + one card per bundled model
-            item {
-                ModelSection(
-                    selectedModel = selectedModel,
-                    onSelectModel = { selectedModel = it },
-                )
-            }
-
-            // 4. Quick Test & Diagnostics Card
-            item {
-                QuickTestCard(modelId = selectedModel.id)
-            }
-
-            // 5. Live Debug Log Console Card
-            item {
-                DebugLogCard(
-                    isEnabled = isDebugLogEnabled,
-                    logs = debugLogs,
-                    onToggle = { isDebugLogEnabled = it },
-                    onClearLogs = { ServiceState.clearLogs() },
-                    onCopyLogs = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("VBookMT Logs", debugLogs.joinToString("\n")))
-                        Toast.makeText(context, "Đã sao chép ${debugLogs.size} dòng log!", Toast.LENGTH_SHORT).show()
+                MainTab.Models -> {
+                    item {
+                        ModelSection(
+                            selectedModel = selectedModel,
+                            onSelectModel = { switchModel(it) },
+                        )
                     }
-                )
+                }
+
+                MainTab.Settings -> {
+                    item {
+                        BackgroundOptimizationCard(
+                            isIgnoringBattery = isIgnoringBattery,
+                            isAutoStartOnOpen = isAutoStartOnOpen,
+                            isNotificationGranted = isNotificationGranted,
+                            onToggleAutoStart = { enabled ->
+                                isAutoStartOnOpen = enabled
+                                BatteryOptimizationHelper.setAutoStartServiceOnOpen(context, enabled)
+                            },
+                            onRequestIgnoreBattery = {
+                                BatteryOptimizationHelper.requestIgnoreBatteryOptimizations(context)
+                                isIgnoringBattery = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
+                            },
+                            onRequestNotification = {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    notificationLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            },
+                            onOpenOemSettings = {
+                                BatteryOptimizationHelper.openAutoStartSettings(context)
+                            }
+                        )
+                    }
+                    item {
+                        PerformanceCard(
+                            tuning = tuning,
+                            isTuning = isTuning,
+                            progress = tuneProgress,
+                            cacheText = PerformanceTuner.cacheText(cacheStats),
+                            cacheHasEntries = cacheStats.entries > 0,
+                            onTune = {
+                                isTuning = true
+                                coroutineScope.launch {
+                                    // Measure the model actually on disk, not merely the one selected in
+                                    // the picker: selecting a card does not download it, and a missing
+                                    // directory made the sweep bail before it started — which read to the
+                                    // reader as "tuning doesn't work".
+                                    val installed = ModelDownloader.firstInstalled(context)
+                                    val modelDir = installed?.let {
+                                        java.io.File(context.filesDir, "models/${it.id}")
+                                    }
+                                    val result = if (modelDir == null) {
+                                        PerformanceTuner.TuneResult.Failure(
+                                            "Chưa tải mô hình nào — vào tab Mô hình để tải trước."
+                                        )
+                                    } else {
+                                        withContext(Dispatchers.IO) {
+                                            PerformanceTuner.autoTune(context, modelDir)
+                                        }
+                                    }
+                                    tuning = when (result) {
+                                        is PerformanceTuner.TuneResult.Success -> result.tuning
+                                        is PerformanceTuner.TuneResult.Failure ->
+                                            PerformanceTuner.current(context)
+                                    }
+                                    isTuning = false
+                                    cacheStats = ChunkTranslator.cacheStats()
+                                    Toast.makeText(
+                                        context,
+                                        when (result) {
+                                            is PerformanceTuner.TuneResult.Success ->
+                                                "Đã tối ưu: ${result.tuning.speedText}"
+                                            is PerformanceTuner.TuneResult.Failure -> result.reason
+                                        },
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            },
+                            onClearCache = {
+                                coroutineScope.launch {
+                                    withContext(Dispatchers.IO) { ChunkTranslator.clearCache() }
+                                    cacheStats = ChunkTranslator.cacheStats()
+                                    Toast.makeText(
+                                        context,
+                                        "Đã xoá bộ nhớ đệm (RAM + nhật ký trên đĩa)",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            },
+                        )
+                    }
+                    item {
+                        LiveDebugLogCard(
+                            isEnabled = isDebugLogEnabled,
+                            onToggle = { isDebugLogEnabled = it },
+                        )
+                    }
+                }
             }
 
             item {
@@ -314,4 +387,24 @@ fun MainScreen(
             )
         }
     }
+}
+
+@Composable
+private fun LiveDebugLogCard(
+    isEnabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    val context = LocalContext.current
+    val debugLogs by ServiceState.debugLogs.collectAsState()
+    DebugLogCard(
+        isEnabled = isEnabled,
+        logs = debugLogs,
+        onToggle = onToggle,
+        onClearLogs = { ServiceState.clearLogs() },
+        onCopyLogs = {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("VBookMT Logs", debugLogs.joinToString("\n")))
+            Toast.makeText(context, "Đã sao chép ${debugLogs.size} dòng log!", Toast.LENGTH_SHORT).show()
+        }
+    )
 }

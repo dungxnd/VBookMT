@@ -2,6 +2,22 @@
 
 Tất cả các thay đổi đáng chú ý của dự án **VBookMT** sẽ được ghi chép tại đây theo định dạng [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v1.2.0] - 2026-11-01
+
+### Thêm mới
+- **Tiện ích vBook đồng nhất**: Gộp thành một bản tiện ích duy nhất cho mọi thiết bị, tự động tìm và kết nối máy chủ dịch qua mạng Wi-Fi nội bộ, tự chuyển sang bộ dịch dự phòng khi máy chủ chưa bật.
+- **Tùy chọn dung lượng mô hình**: Bổ sung lựa chọn các mức dung lượng (FP16, Q16, Q8) ngay trên màn hình chọn mô hình cho cả điện thoại và máy tính, giúp tiết kiệm bộ nhớ máy và mạng.
+- **Giao diện máy tính mới**: Đồng bộ bố cục 3 mục (Tổng quan, Mô hình, Cài đặt) tương tự như trên điện thoại; bổ sung khu vực Dịch thử nghiệm nhanh để kiểm tra kết quả ngay trong app; cung cấp gói cài đặt Windows hoàn chỉnh (.msi).
+
+### Thay đổi
+- **Tối ưu dung lượng ứng dụng**: Ứng dụng Android nhẹ hơn khoảng 48 MB, giảm bớt chiếm dụng bộ nhớ khi cài đặt.
+- **Tự động đo tốc độ chuẩn xác**: Chức năng "Đo và tối ưu" phản ánh đúng tốc độ thực tế của máy, ghi nhớ cấu hình nhanh nhất và không làm mất dữ liệu đã dịch trước đó.
+
+### Sửa lỗi
+- Khắc phục tình trạng mất kết nối hoặc treo ứng dụng khi đo tốc độ trên một số dòng máy.
+- Sửa lỗi hiển thị sai trạng thái tải và dung lượng mô hình trên bản máy tính.
+- Nâng cao độ ổn định và khả năng phục hồi kết nối khi dịch truyện dài.
+
 ## [v1.1.0] - 2026-10-30
 
 ### Added
@@ -41,19 +57,9 @@ Tất cả các thay đổi đáng chú ý của dự án **VBookMT** sẽ đư�
 
 ## [v1.0.0] - 2026-10-29
 
-### Added
-- **Mô hình Dịch Mặc định**: Tích hợp mô hình CTranslate2 INT8 `HachimiMT-60-QT` của tác giả `ngocdang83` (tốc độ > 1.600 ký tự/giây trên CPU, chuẩn văn phong convert, giữ nguyên 100% ngôi xưng hô).
+### Thêm mới
+- **Mô hình Dịch Mặc định**: Tích hợp mô hình CTranslate2 INT8 `HachimiMT-60-QT` của tác giả `ngocdang83` (chuẩn văn phong convert, giữ nguyên 100% ngôi xưng hô).
 - **Mô hình Tùy chọn Tải thêm**: Hỗ trợ tải thêm mô hình `MoxhiMT-30-QT` của tác giả `DanVP` (chỉ 36MB, tiết kiệm RAM) và chuyển đổi trực tiếp trên ứng dụng.
-- **Android Companion App (Kotlin)**:
-  - Chạy `Foreground Service` kèm thông báo cố định chống bị hệ điều hành tắt ngầm do tối ưu pin.
-  - Giao diện Jetpack Compose điều khiển máy chủ 1 chạm và quản lý mô hình.
-  - Nhúng máy chủ HTTP cục bộ lắng nghe tại `http://127.0.0.1:8765/translate`.
-  - Cầu nối C++ JNI tương thích Android NDK.
-- **Windows Standalone App (Kotlin/Native)**:
-  - Biên dịch bản địa `mingwX64` thành file `.exe` độc lập, không cần cài đặt Python hay Java.
-  - C-Interop wrapper liên kết CTranslate2.
-- **Extension vBook**:
-  - Gói plugin vBook chuẩn (`type: "translate"`).
-  - Tự động gọi máy chủ cục bộ và có cơ chế fallback về QuickTranslator nếu máy chủ chưa bật.
-- **Tài liệu & Bản quyền**:
-  - `NOTICE.md` ghi nhận tác quyền chi tiết cho `ngocdang83`, `DanVP`, `OpenNMT`, và `Darkrai9x`.
+- **Android Companion App**: Chạy `Foreground Service` kèm thông báo cố định chống bị hệ điều hành tắt ngầm do tối ưu pin.
+- **Windows Companion App**: Giao diện điều khiển máy chủ dịch và quản lý mô hình.
+- **Tiện ích vBook**: Kết nối qua HTTP nội bộ với app chạy nền.

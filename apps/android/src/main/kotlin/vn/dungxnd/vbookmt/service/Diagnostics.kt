@@ -4,7 +4,7 @@ package vn.dungxnd.vbookmt.service
  * Process-level memory readings for `GET /health`.
  *
  * PSS is the figure that matters on a phone: the JVM heap alone read 16 MB while the real process
- * footprint was ~180 MB (CT2 weights and activations live outside the Java heap).
+ * footprint was ~250 MB (model weights and activations live outside the Java heap).
  */
 object Diagnostics {
 

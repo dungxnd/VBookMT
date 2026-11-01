@@ -25,8 +25,22 @@ reading, so latency matters as much as fidelity.
   information; splitting below paragraph scale measurably degrades output.
 - **No glossary, no term overrides, no translation history, no export, no multi-user, no quotas.**
 - **No durable translation *store*.** A journal of finished chunks exists, but it is a cache and not a database: no schema, no migration, no query, no sharing, and discarding it is always safe. Nothing may come to depend on it beyond replay.
-- **No supported desktop runtime yet.** A second host compiles but does not serve; it is a scaffold
-  for a future port, not a shipped shape.
+- **No *measured* GPU/NPU acceleration.** One engine now ships — ONNX Runtime on CPU — which is what
+  the GPU/NPU story depends on. Android requests
+  Qualcomm QNN (the HTP/NPU backend); a device that cannot provide it falls back to CPU and the reason
+  is surfaced in `/health` rather than hidden. Desktop requests CPU on purpose — the stock
+  `onnxruntime` jar carries no GPU provider and its JNI shim is CPU-only (its own binary reports
+  "not compiled with DirectML support"), so DirectML or WinML would need a C++/.NET bridge that is not
+  in this build. What remains unproven is the whole point of the ONNX path: **no GPU/NPU acceleration
+  has been measured on real hardware**, so the engine ships as usable-but-unbenchmarked rather than as
+  a claimed speed-up. A CPU comparison does not decide it either way.
+- **Two supported host runtimes, one `core`.** Android and Windows both serve; both compile the same
+  `native/` sources against the same dependency pins, so a translation cannot depend on which host
+  answered. A third host is not a goal.
+- **One engine, one tokenizer contract.** ONNX Runtime is the only engine; CTranslate2 was removed
+  from both hosts, and `native/` now serves the SentencePiece tables alone. Every model consumes
+  byte-identical ids from those tables, so model choice cannot change how text is split. The engine
+  cannot fail in a way that is hidden: an unavailable provider degrades to CPU and reports why.
 - **No cloud.** The only network traffic the product ever produces is a one-time model download.
 
 ```mermaid
@@ -65,30 +79,34 @@ speed (a one-off tuning sweep), and generality for quality (one pair, one genre,
 
 ## 3. Building Blocks & Code Map
 
-Five blocks, no cycles, and every arrow points inward. `core` is a leaf: it depends on nothing, and
-nothing inside it may know that Android, a plugin, or a native library exists.
+Five blocks, no cycles, and every arrow points inward. `commonMain` in `core` is a leaf: it depends on
+nothing, and nothing inside it may know that Android, a plugin, or a native library exists. The one
+deliberate exception is `core/jvmMain`, which owns the engine-neutral ONNX adapter so both hosts drive
+it identically — and even there ONNX Runtime is `compileOnly`, so the artifact stays the host's choice.
 
 ```mermaid
 flowchart TD
     EXT["vbook-extension/ — thin client adapter"]
     APP["apps/android/ — engine host + companion UI"]
-    DESK["apps/windows/ — future host (scaffold)"]
+    DESK["apps/windows/ — second engine host + desktop UI"]
     CORE["core/ — platform-free translation brain"]
-    NATIVE["native engine bridge — sole model owner"]
+    NATIVE["native/ — SentencePiece tables (tokenizer only)"]
 
-    EXT -.->|"loopback HTTP · runtime only, no compile-time link"| APP
+    EXT -.->|"loopback gRPC-Web · runtime only, no compile-time link"| APP
+    EXT -.->|"loopback gRPC-Web · LAN opt-in"| DESK
     APP --> CORE
     APP --> NATIVE
     DESK --> CORE
+    DESK --> NATIVE
 ```
 
 | Block | Single responsibility | Dependency rule |
 | :--- | :--- | :--- |
 | `vbook-extension/` | Convert the reader app's fixed calling convention into one request to the host; sanitise once so the fallback path also gets clean text. | **May not** cache, chunk, choose a model, or know anything about the engine beyond the loopback contract. **May not** retry more than once — a stuck reader is worse than a QuickTranslator fallback. |
 | `apps/android/` | Own the engine's lifecycle: service, loopback surface, model download, device tuning, the durable memo file, and the companion UI. | May depend on `core`. **May not** host translation *policy* that belongs in `core` — anything policy-shaped here becomes untestable and unportable. |
-| `core/` | The translation brain, platform-free: how text is split, classified, deduplicated, grouped and memoised, the record format that persists the memo, and what is allowed to reach the engine. | **May not** touch Android, the filesystem, the network, or the native library. Must compile and be testable on a plain JVM. **May not** depend on any app. |
-| `apps/windows/` | A second host for the same brain. | Permitted to be incomplete. When implemented it must reuse `core` unchanged and **may not** introduce a second definition of chunking or batching. |
-| native engine bridge | Sole owner of the loaded model and of inference. | Exactly one caller at a time, always. Promises one output per input, in order; an empty string means "could not translate", never "here is the source". |
+| `core/` | The translation brain, platform-free: how text is split, classified, deduplicated, grouped and memoised, the record format that persists the memo, and what is allowed to reach the engine. Also the engine-neutral ONNX decode loop and model-metadata parsing, so both hosts drive it identically. | **`commonMain` may not** touch Android, the filesystem, the network, or any native library — it must compile for every target and be testable on a plain JVM. **`jvmMain`** is where the JVM-only half lives: the ONNX Runtime adapter (sessions, fp16 reads, provider selection) and the `Path`-based model loader. It declares ONNX Runtime as `compileOnly` precisely so the artifact stays the host's choice — the desktop jar and the Android AAR carry different natives. Still **may not** depend on any app. |
+| `apps/windows/` | A second host for the same brain: same chunker, same token budget, same memo, same gRPC-Web surface, plus a desktop UI. | May depend on `core`. **May not** introduce a second definition of chunking or batching, and **may not** carry translation policy that belongs in `core`. Compiles the same `native/` sources as Android against the same dependency pins. |
+| `native/` | C++ tokenizer bridge: owns the two SentencePiece tables every ONNX graph was exported against. CTranslate2 used to live here beside them; it is gone, and the file that remains serves `load`/`tokenCount`/`encode`/`decode` only. | Exactly one caller at a time, always. Promises one output per input, in order; an empty string means "could not translate", never "here is the source". The native library may not be made a prerequisite of the ONNX path. |
 
 **Verification of the arrows (cheap, not aspirational).** The build enforces the direction: `core`
 compiles without the Android toolchain, JVM tests for it run in seconds and without a device or
@@ -226,7 +244,11 @@ corrupt by addition than by omission.
 | **AD-07** | ~~Memo is memory-only~~ — **superseded by AD-11** | Original reasoning: regenerable data, so disk, migrations and corruption recovery stayed out of scope | Persistent store was deferred then, and adopted once restart-replay became the dominant remaining cost |
 | **AD-08** | Fail fast and let the caller fall back, rather than translate badly | A QuickTranslator fallback is more useful to a reader than invented text | Always answering — hides outages and teaches the user to distrust output |
 | **AD-09** | One translation at a time, globally | Engine is not re-entrant; single-tenant phone; predictable memory and thermals | Parallel replicas — more throughput on paper, worse thermals and memory on device |
-| **AD-10** | Second host (desktop) left as a scaffold | Nothing tests it and no one maintains it; shipping it would imply support | Shipping a half-tested server because it compiles |
+| **AD-10** | ~~Second host (desktop) left as a scaffold~~ — **superseded by AD-14** | Original reasoning: nothing tested it and no one maintained it, so shipping it would imply support | Deferred until something exercised it; once CI compiled it and a real model was translated through it, the deferral stopped applying |
+| **AD-14** | Windows becomes a fully supported host, sharing `core` *and* the same `native/` C++ engine sources as Android | Both hosts now compile identical sources against identical pins (SentencePiece 0.2.3pre1; CTranslate2 was linked in at the time and has since been removed), so the chunker, token budget, repetition guard and position cap cannot drift. 1.1.0's desktop host ran a Python re-implementation that applied none of them, which meant the same chapter could be truncated on the PC and whole on the phone | Keeping the Python worker: needs a system Python plus two pip packages, crosses a process boundary per request, and cannot batch the way an in-process JNI call does |
+| **AD-15** | gRPC-Web is the only wire, with one dispatcher in `core`; the JSON surface is deleted | Two hosts held two copies of the status mapping and they had already diverged (Windows shipped with no size cap and no `GetConfig`/`SetConfig`). One tested dispatcher plus a per-host `TranslatorService` makes "same behaviour on both hosts" structural rather than aspirational. The plugin drops its JSON fallback so a stale host fails loudly with an update instruction instead of silently degrading | Keeping both transports "for compatibility": that is what produced the divergence, and nothing in the release notes could have claimed either one honestly |
+| **AD-16** | ~~ONNX artifacts are published but not offered in the app~~ — **superseded by AD-17** | Original reasoning: this build had no ONNX Runtime dependency and no decode loop, and the native engine required `model.bin` while those repos shipped `encoder_model.onnx`/`decoder_model.onnx`, so offering them meant a 64 MB download that failed every chapter. That was a statement about the *build*, and it stopped being true | — (the deferral it justified was lifted once the runtime existed) |
+| **AD-17** | Ship ONNX Runtime as a second engine, behind an explicit per-model choice, with the provider reported honestly | The reason to offer ONNX at all is GPU/NPU offload, and the previously published graphs could not deliver it: they carried **no KV cache**, so every token re-ran the whole prefix (`0.9 ms + 80 µs × prefix_len` — 3.40 s for a 281-piece chunk vs 1.89 s cached), and they emitted a full 24,000-wide vocabulary where `lm_head` dominates per-token cost. The re-export fixes both: a real `past_key_values` cache across two graphs (first-step and with-past, since a zero-length cache into the with-past graph fails a MatMul dimension check), and an output vocabulary trimmed to 5,951 by untangling `lm_head` from the shared embedding — 1.91× less decode work per token — in fp16 rather than INT8. **What was actually measured was *dynamic* INT8** (`MatMulInteger` + `DynamicQuantizeLinear`): its activation scales are computed at run time, which is a CPU-oriented ONNX Runtime mode that appears nowhere in QNN's supported-op table, so the result described CPU inference through a graph the NPU cannot compile — and on an untrimmed, cache-less export. That is not a verdict on quantized inference here, and the original wording overstated it. Tokenisation reuses the `native/` SentencePiece tables, so every engine consumes identical ids. **Superseded in part:** CTranslate2 was subsequently removed from both hosts, which is why `native/` now exposes the tokenizer alone — the tokenizer-only load path this decision introduced became the only path. **Every provider request is verified, never assumed**: one that the binary lacks falls back to CPU and the reason is surfaced in `/health` | Shipping the old cacheless graphs behind a "GPU acceleration" label (the numbers above say it would have been slower than the CPU path it replaced); INT8 via QDQ for the GPU path (correct for HTP/NPU, not for GPU) — **no longer rejected on accuracy grounds**: a static-QDQ build now measures chrF 96.00 (uint8) and 100.00 (uint16) against its own fp32 source, so the earlier "it lost accuracy" was the dynamic-quantization confound above, not QDQ; a merged single decoder graph (cannot start from a zero-length cache); a second Java tokenizer (DJL ships no Android natives, and any drift from the `.spm` tables would surface as wrong words rather than an error) |
 | **AD-11** | Append-only journal for the memo, kept in a no-backup directory and compacted when it outgrows what it holds | Re-reads are the common case and the process is killed often, so a restart is the dominant remaining cost. A journal makes a restart invisible for the price of a few append writes per chapter. Damage is always bounded: an unparseable record ends replay there, and a file that cannot be opened at all is deleted and rebuilt | Rewriting a snapshot per chapter (measurable flash wear); SQLite/Room (schema, migrations and a codegen dependency for a regenerable key→text map) |
 
 ---

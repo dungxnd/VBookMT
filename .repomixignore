@@ -45,6 +45,10 @@ exported_models/
 test_input.txt
 output_*.txt
 
+# Build & release tooling. Kept in the repository because CI drives it, but it is not part of what
+# gets published: no release artifact contains it, and it should not appear in packed output either.
+scripts/
+
 # OS files
 .DS_Store
 Thumbs.db
